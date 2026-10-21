@@ -25,6 +25,7 @@ public:
 private:
     void handleEvents();
     void render();
+	void drawPuzzlePreview();
 
     using WindowPtr = std::unique_ptr<
         SDL_Window, decltype(&SDL_DestroyWindow)>;
