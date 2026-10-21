@@ -1,9 +1,11 @@
 
 #include "Game.h"
 #include "LogicGate.h"
+#include "Circuit.h"
 
 #include <SDL3/SDL_main.h>
 
+#include <string>
 #include <array>
 #include <exception>
 #include <iostream>
@@ -41,9 +43,70 @@ void testLogicGates() {
     std::cout << "All 12 logic gate checks passed.\n";
 }
 
+
+void testCircuit() {
+    Circuit circuit{ 2 };
+
+    const auto A = Circuit::SignalSource::input(0);
+    const auto B = Circuit::SignalSource::input(1);
+
+    // Gate 0: A OR B
+    const auto orGate = circuit.addGate(GateType::Or, {
+        A, B
+    });
+
+    // Gate 1: A AND B
+    const auto andGate = circuit.addGate(GateType::And, {
+        A, B
+    });
+
+    // Gate 2: NOT (A AND B)
+    const auto notGate = circuit.addGate(GateType::Not, {
+        Circuit::SignalSource::gate(andGate)
+    });
+
+    // Gate 3: Combine the two branches.
+    const auto finalGate = circuit.addGate(GateType::And, {
+        Circuit::SignalSource::gate(orGate),
+        Circuit::SignalSource::gate(notGate)
+    });
+
+    circuit.setOutput(
+        Circuit::SignalSource::gate(finalGate)
+    );
+
+    // All possible input combinations.
+    const std::array testCases{
+        std::array{false, false},
+        std::array{false, true},
+        std::array{true, false},
+        std::array{true, true}
+    };
+
+    // Correct XOR outputs.
+    const std::array expected{
+        false, true, true, false
+    };
+
+    for (std::size_t i = 0; i < testCases.size(); ++i) {
+        const bool result = circuit.evaluate(testCases[i]);
+
+        if (result != expected[i]) {
+            throw std::runtime_error(
+                "XOR circuit failed test case " +
+                std::to_string(i)
+            );
+        }
+    }
+
+    std::cout << "XOR circuit passed all 4 tests.\n";
+}
+
+
 int main(int, char* []) {
     try {
         testLogicGates();
+		testCircuit();
 
         Game game;
         game.run();
