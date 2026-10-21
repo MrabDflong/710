@@ -1,0 +1,20 @@
+
+# Visual Studio temporary files
+.vs/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+*.ipch
+
+# Compiled files and build directories
+x64/
+x86/
+Debug/
+Release/
+bin/
+obj/
+
+# Temporary files
+*.tmp
+*.bak
