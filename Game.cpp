@@ -1,10 +1,48 @@
 #include "Game.h"
+#include "Circuit.h"
 
+#include <array>
 #include <stdexcept>
 #include <string>
 
 // Helpers used only within Game.cpp.
 namespace {
+
+    // Coordinates used by rendering and input.
+    constexpr SDL_FRect kGateSocket{ 615, 295, 160, 85 };
+
+    constexpr SDL_FRect kAndButton{ 990, 235, 215, 50 };
+    constexpr SDL_FRect kOrButton{ 990, 310, 215, 50 };
+    constexpr SDL_FRect kNotButton{ 990, 385, 215, 50 };
+
+    constexpr SDL_FRect kRunButton{ 615, 485, 160, 45 };
+    constexpr SDL_FRect kResetButton{ 795, 485, 110, 45 };
+
+    [[nodiscard]] bool containsPoint(
+        const SDL_FRect& rect,
+        float x,
+        float y
+    ) {
+        return x >= rect.x &&
+            x < rect.x + rect.w &&
+            y >= rect.y &&
+            y < rect.y + rect.h;
+    }
+
+    [[nodiscard]] std::string gateName(GateType type) {
+        switch (type) {
+        case GateType::And:
+            return "AND";
+
+        case GateType::Or:
+            return "OR";
+
+        case GateType::Not:
+            return "NOT";
+        }
+
+        throw std::logic_error("Unknown gate type.");
+    }
 
     void checkSDL(bool success) {
         if (!success) {
@@ -117,8 +155,147 @@ void Game::handleEvents() {
         if (event.type == SDL_EVENT_QUIT) {
             running_ = false;
         }
+        else if (
+            event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+            event.button.button == SDL_BUTTON_LEFT
+            ) {
+            // Convert actual window coordinates to 1280 x 720 coordinate system.
+            checkSDL(SDL_ConvertEventToRenderCoordinates(
+                renderer_.get(),
+                &event
+            ));
+
+            handleMouseClick(event.button.x, event.button.y);
+        }
     }
 }
+
+
+void Game::handleMouseClick(float x, float y) {
+    // Select gate from inventory.
+    if (containsPoint(kAndButton, x, y)) {
+        selectedGate_ = GateType::And;
+        statusMessage_ = "AND SELECTED - CLICK THE SOCKET";
+        return;
+    }
+
+    if (containsPoint(kOrButton, x, y)) {
+        selectedGate_ = GateType::Or;
+        statusMessage_ = "OR SELECTED - CLICK THE SOCKET";
+        return;
+    }
+
+    if (containsPoint(kNotButton, x, y)) {
+        selectedGate_ = GateType::Not;
+        statusMessage_ = "NOT SELECTED - REQUIRES ONE INPUT";
+        return;
+    }
+
+    // Place selected gate into circuit socket.
+    if (containsPoint(kGateSocket, x, y)) {
+        if (!selectedGate_.has_value()) {
+            statusMessage_ = "SELECT A GATE FIRST";
+            return;
+        }
+
+        const LogicGate gate{ *selectedGate_ };
+
+        if (gate.inputCount() != 2) {
+            statusMessage_ =
+                "ERROR 422: SOCKET REQUIRES TWO INPUTS";
+            return;
+        }
+
+        placedGate_ = selectedGate_;
+
+        // The circuit has changed so previous verification result is no longer valid.
+        verificationStatus_ = VerificationStatus::Untested;
+
+        statusMessage_ =
+            gateName(*placedGate_) + " PLACED - RUN TESTS";
+
+        return;
+    }
+
+    // Run circuit tests.
+    if (containsPoint(kRunButton, x, y)) {
+        runPuzzleTests();
+        return;
+    }
+
+    // Clear circuit and selection.
+    if (containsPoint(kResetButton, x, y)) {
+        selectedGate_.reset();
+        placedGate_.reset();
+
+        verificationStatus_ = VerificationStatus::Untested;
+        statusMessage_ = "CIRCUIT RESET";
+
+        return;
+    }
+}
+
+
+void Game::runPuzzleTests() {
+    if (!placedGate_.has_value()) {
+        verificationStatus_ = VerificationStatus::Failed;
+        statusMessage_ = "ERROR 404: GATE SOCKET IS EMPTY";
+        return;
+    }
+
+    // Build a two-input circuit using the player's gate.
+    Circuit circuit{ 2 };
+
+    const auto gateId = circuit.addGate(
+        *placedGate_,
+        {
+            Circuit::SignalSource::input(0),
+            Circuit::SignalSource::input(1)
+        }
+    );
+
+    circuit.setOutput(
+        Circuit::SignalSource::gate(gateId)
+    );
+
+    // All possible combinations of A and B.
+    const std::array testCases{
+        std::array{false, false},
+        std::array{false, true},
+        std::array{true, false},
+        std::array{true, true}
+    };
+
+    // Work Order 01 requires AND behaviour.
+    const std::array expectedOutputs{
+        false, false, false, true
+    };
+
+    std::size_t failedTests = 0;
+
+    for (std::size_t i = 0; i < testCases.size(); ++i) {
+        const bool actual = circuit.evaluate(testCases[i]);
+
+        if (actual != expectedOutputs[i]) {
+            ++failedTests;
+        }
+    }
+
+    if (failedTests == 0) {
+        verificationStatus_ = VerificationStatus::Passed;
+        statusMessage_ =
+            "710 VERIFIED - ALL FOUR TESTS PASSED";
+    }
+    else {
+        verificationStatus_ = VerificationStatus::Failed;
+
+        statusMessage_ =
+            "ERROR 409: " +
+            std::to_string(failedTests) +
+            " OF 4 TESTS FAILED";
+    }
+}
+
 
 
 void Game::drawPuzzlePreview() {
@@ -172,32 +349,60 @@ void Game::drawPuzzlePreview() {
 
     // Circuit board
     // ------------------------------
+
     drawText(renderer, 375, 130, "CIRCUIT BOARD");
 
-    // Socket where a gate will be placed.
-    const SDL_FRect gateSocket{ 615, 295, 160, 85 };
+    // Show the current verification status.
+    switch (verificationStatus_) {
+    case VerificationStatus::Untested:
+        drawText(renderer, 375, 185, "STATUS: NOT VERIFIED");
+        break;
 
-    checkSDL(SDL_RenderRect(renderer, &gateSocket));
+    case VerificationStatus::Passed:
+        drawText(renderer, 375, 185, "STATUS: 710 VERIFIED");
+        break;
 
-    // Two input wires.
+    case VerificationStatus::Failed:
+        drawText(renderer, 375, 185, "STATUS: VERIFICATION FAILED");
+        break;
+    }
+
+    // Draw gate socket.
+    checkSDL(SDL_RenderRect(renderer, &kGateSocket));
+
+    // Input A to socket
     checkSDL(SDL_RenderLine(
         renderer, 435, 298, 615, 320
     ));
 
+    // Input B to socket
     checkSDL(SDL_RenderLine(
         renderer, 435, 418, 615, 350
     ));
 
-    // Output wire.
+    // Socket to output Y
     checkSDL(SDL_RenderLine(
         renderer, 775, 338, 875, 338
     ));
 
-    // Labels for circuit inputs and output.
     drawText(renderer, 398, 291, "A");
     drawText(renderer, 398, 411, "B");
-    drawText(renderer, 680, 333, "EMPTY");
     drawText(renderer, 885, 332, "Y");
+
+    // Display gate that has been placed.
+    if (placedGate_.has_value()) {
+        drawText(renderer, 680, 333, gateName(*placedGate_));
+    }
+    else {
+        drawText(renderer, 680, 333, "EMPTY");
+    }
+
+    // Draw testing controls.
+    checkSDL(SDL_RenderRect(renderer, &kRunButton));
+    checkSDL(SDL_RenderRect(renderer, &kResetButton));
+
+    drawText(renderer, 640, 504, "RUN TESTS");
+    drawText(renderer, 817, 504, "RESET");
     // ------------------------------
 
 
@@ -206,17 +411,27 @@ void Game::drawPuzzlePreview() {
     // ------------------------------
     drawText(renderer, 985, 130, "AVAILABLE GATES");
 
-    const SDL_FRect andBox{ 990, 235, 215, 50 };
-    const SDL_FRect orBox{ 990, 310, 215, 50 };
-    const SDL_FRect notBox{ 990, 385, 215, 50 };
-
-    checkSDL(SDL_RenderRect(renderer, &andBox));
-    checkSDL(SDL_RenderRect(renderer, &orBox));
-    checkSDL(SDL_RenderRect(renderer, &notBox));
+    // Draw inventory buttons using shared rectangles.
+    checkSDL(SDL_RenderRect(renderer, &kAndButton));
+    checkSDL(SDL_RenderRect(renderer, &kOrButton));
+    checkSDL(SDL_RenderRect(renderer, &kNotButton));
 
     drawText(renderer, 1010, 255, "AND");
     drawText(renderer, 1010, 330, "OR");
     drawText(renderer, 1010, 405, "NOT");
+
+    // Display player's current selection.
+    if (selectedGate_.has_value()) {
+        drawText(
+            renderer,
+            985,
+            480,
+            "SELECTED: " + gateName(*selectedGate_)
+        );
+    }
+    else {
+        drawText(renderer, 985, 480, "SELECTED: NONE");
+    }
     // ------------------------------
 
 
@@ -225,8 +440,10 @@ void Game::drawPuzzlePreview() {
     // ------------------------------
     drawText(renderer, 60, 610, "SYSTEM LOG");
     drawText(renderer, 60, 640, "> WORK ORDER 01 LOADED");
-    drawText(renderer, 60, 660, "> AWAITING COMPONENT PLACEMENT");
+    drawText(renderer, 60, 660, "> " + statusMessage_);
     // ------------------------------
+
+
 }
 
 

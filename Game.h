@@ -1,7 +1,11 @@
 #pragma once
 
+#include "LogicGate.h"
+
 #include <SDL3/SDL.h>
 #include <memory>
+#include <optional>
+#include <string>
 
 // Manages SDL's lifecycle using RAII
 class SDLContext {
@@ -24,6 +28,9 @@ public:
 
 private:
     void handleEvents();
+    void handleMouseClick(float x, float y);
+    void runPuzzleTests();
+
     void render();
 	void drawPuzzlePreview();
 
@@ -40,4 +47,23 @@ private:
     RendererPtr renderer_{ nullptr, SDL_DestroyRenderer };
 
     bool running_{ true };
+
+
+    enum class VerificationStatus {
+        Untested,
+        Passed,
+        Failed
+    };
+
+    std::optional<GateType> selectedGate_;
+    std::optional<GateType> placedGate_;
+
+    VerificationStatus verificationStatus_{
+        VerificationStatus::Untested
+    };
+
+    std::string statusMessage_{
+        "AWAITING COMPONENT PLACEMENT"
+    };
+
 };

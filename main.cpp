@@ -1,4 +1,3 @@
-
 #include "Game.h"
 #include "LogicGate.h"
 #include "Circuit.h"
