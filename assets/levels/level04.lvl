@@ -1,0 +1,12 @@
+id=04
+title=SENSOR DISAGREEMENT
+objective=Detect mismatched sensor signals.
+hint=Output ON when A & B differ.
+gates=AND,OR,NOT
+truth_table=0110
+
+socket=s0,490,205,A,B
+socket=s1,490,365,A,B
+socket=s2,635,365,s1
+socket=s3,780,285,s0,s2
+output=s3

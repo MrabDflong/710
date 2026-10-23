@@ -1,6 +1,8 @@
+
 #include "LevelManager.h"
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -10,7 +12,6 @@
 
 namespace {
 
-    // Remove leading and trailing whitespace.
     std::string trim(const std::string& text) {
         const auto first = text.find_first_not_of(" \t\r\n");
 
@@ -26,30 +27,76 @@ namespace {
         if (name == "AND") {
             return GateType::And;
         }
-
         if (name == "OR") {
             return GateType::Or;
         }
-
         if (name == "NOT") {
             return GateType::Not;
         }
 
-        throw std::runtime_error(
-            "Unknown gate type: " + name
+        throw std::runtime_error("Unknown gate type: " + name);
+    }
+
+    float parseCoordinate(const std::string& value) {
+        try {
+            std::size_t processed = 0;
+            const float result = std::stof(value, &processed);
+
+            if (processed != value.size() ||
+                !std::isfinite(result)) {
+                throw std::invalid_argument("Invalid coordinate.");
+            }
+
+            return result;
+        }
+        catch (const std::exception&) {
+            throw std::runtime_error("Invalid socket coordinate: " + value);
+        }
+    }
+
+    SocketDefinition parseSocket(const std::string& value) {
+        std::stringstream stream{ value };
+        std::vector<std::string> fields;
+        std::string part;
+
+        while (std::getline(stream, part, ',')) {
+            fields.push_back(trim(part));
+        }
+
+        if (value.back() == ',' ||
+            (fields.size() != 4 && fields.size() != 5)) {
+            throw std::runtime_error("Socket requires ID,X,Y and 1 or 2 sources.");
+        }
+
+        for (const auto& field : fields) {
+            if (field.empty()) {
+                throw std::runtime_error("Socket contains an empty field.");
+            }
+        }
+
+        SocketDefinition socket;
+        socket.id = fields[0];
+        socket.x = parseCoordinate(fields[1]);
+        socket.y = parseCoordinate(fields[2]);
+
+        socket.sources.assign(
+            fields.begin() + 3,
+            fields.end()
         );
+
+        return socket;
     }
 
 }
 
-// Load all .lvl files when manager is created.
+
+// LevelManager
+// ------------------------------
 LevelManager::LevelManager(
     const std::filesystem::path& directory
 ) {
     if (!std::filesystem::is_directory(directory)) {
-        throw std::runtime_error(
-            "Level directory not found: " + directory.string()
-        );
+        throw std::runtime_error("Level directory not found: " + directory.string());
     }
 
     std::vector<std::filesystem::path> files;
@@ -63,13 +110,11 @@ LevelManager::LevelManager(
         }
     }
 
-    // Sort by filename. level01, level02...
+    // Filename order determines work-order order.
     std::sort(files.begin(), files.end());
 
     if (files.empty()) {
-        throw std::runtime_error(
-            "No .lvl files found in: " + directory.string()
-        );
+        throw std::runtime_error("No .lvl files found in: " + directory.string());
     }
 
     for (const auto& file : files) {
@@ -83,9 +128,7 @@ Level LevelManager::loadFromFile(
     std::ifstream file{ path };
 
     if (!file.is_open()) {
-        throw std::runtime_error(
-            "Unable to open level: " + path.string()
-        );
+        throw std::runtime_error("Unable to open level: " + path.string());
     }
 
     Level level;
@@ -96,10 +139,8 @@ Level LevelManager::loadFromFile(
 
     while (std::getline(file, line)) {
         ++lineNumber;
-
         line = trim(line);
 
-        // Ignore empty lines and comments.
         if (line.empty() || line.starts_with('#')) {
             continue;
         }
@@ -128,10 +169,11 @@ Level LevelManager::loadFromFile(
             );
         }
 
-        if (!seenKeys.insert(key).second) {
-            throw std::runtime_error(
-                path.string() + ": Duplicate key " + key
-            );
+        // Multiple sockets are allowed.
+        // Multiples of other properties are not.
+        if (key != "socket" &&
+            !seenKeys.insert(key).second) {
+            throw std::runtime_error(path.string() + ": Duplicate key " + key);
         }
 
         if (key == "id") {
@@ -148,10 +190,10 @@ Level LevelManager::loadFromFile(
         }
         else if (key == "gates") {
             std::stringstream stream{ value };
-            std::string gateName;
+            std::string name;
 
-            while (std::getline(stream, gateName, ',')) {
-                const auto gate = parseGateType(trim(gateName));
+            while (std::getline(stream, name, ',')) {
+                const GateType gate = parseGateType(trim(name));
 
                 if (level.allowsGate(gate)) {
                     throw std::runtime_error(
@@ -161,6 +203,10 @@ Level LevelManager::loadFromFile(
                 }
 
                 level.availableGates.push_back(gate);
+            }
+
+            if (value.back() == ',') {
+                throw std::runtime_error(path.string() + ": Empty gate in inventory.");
             }
         }
         else if (key == "truth_table") {
@@ -182,23 +228,30 @@ Level LevelManager::loadFromFile(
                 level.expectedOutputs[i] = value[i] == '1';
             }
         }
+        else if (key == "socket") {
+            level.sockets.push_back(parseSocket(value));
+        }
+        else if (key == "output") {
+            level.outputSocket = value;
+        }
         else {
-            throw std::runtime_error(
-                path.string() + ": Unknown property " + key
-            );
+            throw std::runtime_error(path.string() + ": Unknown property " + key);
         }
     }
 
     if (file.bad()) {
-        throw std::runtime_error(
-            "Error reading level: " + path.string()
-        );
+        throw std::runtime_error("Error reading level: " + path.string());
     }
 
-    // Make sure file contains every required property.
+    // Validate required properties.
     for (const auto* required : {
-        "id", "title", "objective", "hint",
-        "gates", "truth_table"
+        "id", 
+        "title", 
+        "objective", 
+        "hint",
+        "gates", 
+        "truth_table", 
+        "output"
         }) {
         if (!seenKeys.contains(required)) {
             throw std::runtime_error(
@@ -208,9 +261,67 @@ Level LevelManager::loadFromFile(
         }
     }
 
-    if (level.availableGates.empty()) {
+    if (level.availableGates.empty() || level.sockets.empty()) {
         throw std::runtime_error(
-            path.string() + ": No gates available."
+            path.string() +
+            ": Level needs gates and at least one socket."
+        );
+    }
+
+    // Validate socket IDs and connection order.
+    std::unordered_set<std::string> definedSockets;
+
+    for (const auto& socket : level.sockets) {
+        if (socket.id == "A" || socket.id == "B" ||
+            !definedSockets.insert(socket.id).second) {
+            throw std::runtime_error(
+                path.string() +
+                ": Duplicate or reserved socket ID: " +
+                socket.id
+            );
+        }
+
+        // Each source must be an external input or a socket defined before this one.
+        for (const auto& source : socket.sources) {
+            if (source != "A" && source != "B" &&
+                !definedSockets.contains(source)) {
+                throw std::runtime_error(
+                    path.string() +
+                    ": Invalid or forward connection: " +
+                    source
+                );
+            }
+
+            if (source == socket.id) {
+                throw std::runtime_error(
+                    path.string() +
+                    ": Socket cannot connect to itself."
+                );
+            }
+        }
+
+        // At least one available gate must fit this socket.
+        const bool compatible = std::any_of(
+            level.availableGates.begin(),
+            level.availableGates.end(),
+            [&](GateType type) {
+                return LogicGate{ type }.inputCount() == socket.sources.size();
+            }
+        );
+
+        if (!compatible) {
+            throw std::runtime_error(
+                path.string() +
+                ": No compatible gate for socket " +
+                socket.id
+            );
+        }
+    }
+
+    if (!definedSockets.contains(level.outputSocket)) {
+        throw std::runtime_error(
+            path.string() +
+            ": Output references an unknown socket."
         );
     }
 

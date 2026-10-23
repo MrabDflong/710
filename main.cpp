@@ -12,7 +12,7 @@
 
 // Temporary development tests.
 // Will move to dedicated file later.
-void testLogicGates() {
+static void testLogicGates() {
     const LogicGate andGate{ GateType::And };
     const LogicGate orGate{ GateType::Or };
     const LogicGate notGate{ GateType::Not };
@@ -43,7 +43,7 @@ void testLogicGates() {
 }
 
 
-void testCircuit() {
+static void testCircuit() {
     Circuit circuit{ 2 };
 
     const auto A = Circuit::SignalSource::input(0);

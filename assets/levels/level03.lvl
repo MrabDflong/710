@@ -1,0 +1,10 @@
+id=03
+title=PUMP SAFETY INTERLOCK
+objective=Restore the pump isolation circuit.
+hint=Output OFF when A & B are ON.
+gates=AND,OR,NOT
+truth_table=1110
+
+socket=s0,545,290,A,B
+socket=s1,745,290,s0
+output=s1

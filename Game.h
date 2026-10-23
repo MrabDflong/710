@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 
 // Manages SDL's lifecycle using RAII
 class SDLContext {
@@ -29,7 +30,7 @@ public:
 
 private:
     void handleEvents();
-    void handleMouseClick(float x, float y);
+    void handleMouseClick(float x, float y, bool removeGate);
     void runPuzzleTests();
 
     void render();
@@ -59,7 +60,9 @@ private:
     };
 
     std::optional<GateType> selectedGate_;
-    std::optional<GateType> placedGate_;
+    
+    // One placed gate per socket ID.
+    std::unordered_map<std::string, GateType> placedGates_;
 
     VerificationStatus verificationStatus_{
         VerificationStatus::Untested

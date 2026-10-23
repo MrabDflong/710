@@ -172,6 +172,8 @@ xcopy /E /I /Y "$(ProjectDir)assets" "$(TargetDir)assets" &gt;nul
   <ItemGroup>
     <None Include="assets\levels\level01.lvl" />
     <None Include="assets\levels\level02.lvl" />
+    <None Include="assets\levels\level03.lvl" />
+    <None Include="assets\levels\level04.lvl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

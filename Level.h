@@ -7,6 +7,18 @@
 #include <string>
 #include <vector>
 
+// Describes one gate position on circuit board.
+struct SocketDefinition {
+    std::string id;
+
+    float x{};
+    float y{};
+
+    // Sources are "A", "B", or previous socket IDs.
+    std::vector<std::string> sources;
+};
+
+// Describes one externally loaded work order.
 struct Level {
     std::string id;
     std::string title;
@@ -15,8 +27,13 @@ struct Level {
 
     std::vector<GateType> availableGates;
 
-    // Expected outputs for 00, 01, 10 & 11.
+    // Expected outputs for 00, 01, 10 and 11.
     std::array<bool, 4> expectedOutputs{};
+
+    std::vector<SocketDefinition> sockets;
+
+    // ID of socket connected to Y.
+    std::string outputSocket;
 
     [[nodiscard]] bool allowsGate(GateType type) const {
         return std::find(

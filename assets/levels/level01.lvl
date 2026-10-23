@@ -4,3 +4,6 @@ objective=Restore auxiliary power.
 hint=Both inputs must be active.
 gates=AND,OR,NOT
 truth_table=0001
+
+socket=main,620,300,A,B
+output=main
