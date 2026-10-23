@@ -83,6 +83,11 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
+    <PostBuildEvent>
+      <Command>
+xcopy /E /I /Y "$(ProjectDir)assets" "$(TargetDir)assets" &gt;nul
+</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -99,6 +104,11 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
+    <PostBuildEvent>
+      <Command>
+xcopy /E /I /Y "$(ProjectDir)assets" "$(TargetDir)assets" &gt;nul
+</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -113,6 +123,11 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
+    <PostBuildEvent>
+      <Command>
+xcopy /E /I /Y "$(ProjectDir)assets" "$(TargetDir)assets" &gt;nul
+</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -129,6 +144,11 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
+    <PostBuildEvent>
+      <Command>
+xcopy /E /I /Y "$(ProjectDir)assets" "$(TargetDir)assets" &gt;nul
+</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ProjectReference Include="external\SDL\VisualC\SDL\SDL.vcxproj">
@@ -138,13 +158,20 @@
   <ItemGroup>
     <ClCompile Include="Circuit.cpp" />
     <ClCompile Include="Game.cpp" />
+    <ClCompile Include="LevelManager.cpp" />
     <ClCompile Include="LogicGate.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Circuit.h" />
     <ClInclude Include="Game.h" />
+    <ClInclude Include="Level.h" />
+    <ClInclude Include="LevelManager.h" />
     <ClInclude Include="LogicGate.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="assets\levels\level01.lvl" />
+    <None Include="assets\levels\level02.lvl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

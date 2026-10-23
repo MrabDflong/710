@@ -1,6 +1,7 @@
 #pragma once
 
 #include "LogicGate.h"
+#include "LevelManager.h"
 
 #include <SDL3/SDL.h>
 #include <memory>
@@ -42,6 +43,8 @@ private:
 
     // Declaration order matters for destruction.
     SDLContext sdl_;
+
+    LevelManager levelManager_;
 
     WindowPtr window_{ nullptr, SDL_DestroyWindow };
     RendererPtr renderer_{ nullptr, SDL_DestroyRenderer };

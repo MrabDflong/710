@@ -2,6 +2,7 @@
 #include "Circuit.h"
 
 #include <array>
+#include <filesystem>
 #include <stdexcept>
 #include <string>
 
@@ -17,6 +18,31 @@ namespace {
 
     constexpr SDL_FRect kRunButton{ 615, 485, 160, 45 };
     constexpr SDL_FRect kResetButton{ 795, 485, 110, 45 };
+    constexpr SDL_FRect kNextButton{ 615, 535, 290, 34 };
+
+    // Input combinations in truth table order.
+    constexpr std::array kInputCases{
+        std::array{false, false},
+        std::array{false, true},
+        std::array{true, false},
+        std::array{true, true}
+    };
+
+    // Find level files relative to exe.
+    [[nodiscard]] std::filesystem::path getLevelDirectory() {
+        const char* basePath = SDL_GetBasePath();
+
+        if (basePath == nullptr) {
+            throw std::runtime_error(
+                std::string{ "Could not locate executable: " } +
+                SDL_GetError()
+            );
+        }
+
+        return std::filesystem::path{ basePath }
+            / "assets"
+            / "levels";
+    }
 
     [[nodiscard]] bool containsPoint(
         const SDL_FRect& rect,
@@ -86,7 +112,7 @@ SDLContext::~SDLContext() {
 
 // Game implementation
 
-Game::Game() {
+Game::Game() : levelManager_{getLevelDirectory() } {
     constexpr int width = 1280;
     constexpr int height = 720;
 
@@ -172,24 +198,33 @@ void Game::handleEvents() {
 
 
 void Game::handleMouseClick(float x, float y) {
-    // Select gate from inventory.
-    if (containsPoint(kAndButton, x, y)) {
+    const Level& level = levelManager_.currentLevel();
+
+    // Only allow gates belonging to this work order.
+    if (containsPoint(kAndButton, x, y) &&
+        level.allowsGate(GateType::And)) {
+
         selectedGate_ = GateType::And;
         statusMessage_ = "AND SELECTED - CLICK THE SOCKET";
         return;
     }
 
-    if (containsPoint(kOrButton, x, y)) {
+    if (containsPoint(kOrButton, x, y) &&
+        level.allowsGate(GateType::Or)) {
+
         selectedGate_ = GateType::Or;
         statusMessage_ = "OR SELECTED - CLICK THE SOCKET";
         return;
     }
 
-    if (containsPoint(kNotButton, x, y)) {
+    if (containsPoint(kNotButton, x, y) &&
+        level.allowsGate(GateType::Not)) {
+
         selectedGate_ = GateType::Not;
         statusMessage_ = "NOT SELECTED - REQUIRES ONE INPUT";
         return;
     }
+
 
     // Place selected gate into circuit socket.
     if (containsPoint(kGateSocket, x, y)) {
@@ -233,6 +268,22 @@ void Game::handleMouseClick(float x, float y) {
 
         return;
     }
+
+    // Progress after successful verification.
+    if (containsPoint(kNextButton, x, y) &&
+        verificationStatus_ == VerificationStatus::Passed &&
+        levelManager_.hasNextLevel()) {
+
+        levelManager_.nextLevel();
+
+        selectedGate_.reset();
+        placedGate_.reset();
+
+        verificationStatus_ = VerificationStatus::Untested;
+        statusMessage_ = "NEW WORK ORDER LOADED";
+
+        return;
+    }
 }
 
 
@@ -258,25 +309,15 @@ void Game::runPuzzleTests() {
         Circuit::SignalSource::gate(gateId)
     );
 
-    // All possible combinations of A and B.
-    const std::array testCases{
-        std::array{false, false},
-        std::array{false, true},
-        std::array{true, false},
-        std::array{true, true}
-    };
 
-    // Work Order 01 requires AND behaviour.
-    const std::array expectedOutputs{
-        false, false, false, true
-    };
+    const Level& level = levelManager_.currentLevel();
 
     std::size_t failedTests = 0;
 
-    for (std::size_t i = 0; i < testCases.size(); ++i) {
-        const bool actual = circuit.evaluate(testCases[i]);
+    for (std::size_t i = 0; i < kInputCases.size(); ++i) {
+        const bool actual = circuit.evaluate(kInputCases[i]);
 
-        if (actual != expectedOutputs[i]) {
+        if (actual != level.expectedOutputs[i]) {
             ++failedTests;
         }
     }
@@ -300,6 +341,7 @@ void Game::runPuzzleTests() {
 
 void Game::drawPuzzlePreview() {
     SDL_Renderer* renderer = renderer_.get();
+    const Level& level = levelManager_.currentLevel();
 
     // Terminal heading
     checkSDL(SDL_SetRenderDrawColor(
@@ -307,7 +349,13 @@ void Game::drawPuzzlePreview() {
     ));
 
     drawText(renderer, 40, 40, "710 // MAINTENANCE TERMINAL");
-    drawText(renderer, 40, 65, "WORK ORDER 01 - AUXILIARY POWER");
+
+    drawText(
+        renderer,
+        40,
+        65,
+        "WORK ORDER " + level.id + " - " + level.title
+    );
 
     // Define four interface panels.
     const SDL_FRect objectivePanel{ 40, 105, 295, 470 };
@@ -334,25 +382,39 @@ void Game::drawPuzzlePreview() {
     // Objective panel
     // ------------------------------
     drawText(renderer, 60, 130, "OBJECTIVE");
-    drawText(renderer, 60, 175, "Restore auxiliary power.");
-    drawText(renderer, 60, 200, "Both inputs must be active.");
+    drawText(renderer, 60, 175, level.objective);
+    drawText(renderer, 60, 200, level.hint);
 
     drawText(renderer, 60, 270, "TARGET TRUTH TABLE");
-
     drawText(renderer, 60, 305, "A    B    Y");
-    drawText(renderer, 60, 330, "0    0    0");
-    drawText(renderer, 60, 355, "0    1    0");
-    drawText(renderer, 60, 380, "1    0    0");
-    drawText(renderer, 60, 405, "1    1    1");
+
+    for (std::size_t i = 0; i < kInputCases.size(); ++i) {
+        const auto& inputs = kInputCases[i];
+
+        const std::string row =
+            std::to_string(static_cast<int>(inputs[0])) +
+            "    " +
+            std::to_string(static_cast<int>(inputs[1])) +
+            "    " +
+            std::to_string(
+                static_cast<int>(level.expectedOutputs[i])
+            );
+
+        drawText(
+            renderer,
+            60,
+            330.0f + static_cast<float>(i) * 25.0f,
+            row
+        );
+    }
     // ------------------------------
 
 
     // Circuit board
     // ------------------------------
-
     drawText(renderer, 375, 130, "CIRCUIT BOARD");
 
-    // Show the current verification status.
+    // Show current verification status.
     switch (verificationStatus_) {
     case VerificationStatus::Untested:
         drawText(renderer, 375, 185, "STATUS: NOT VERIFIED");
@@ -403,6 +465,22 @@ void Game::drawPuzzlePreview() {
 
     drawText(renderer, 640, 504, "RUN TESTS");
     drawText(renderer, 817, 504, "RESET");
+
+    // Only show NEXT button after current level is complete.
+    if (verificationStatus_ == VerificationStatus::Passed) {
+        if (levelManager_.hasNextLevel()) {
+            checkSDL(SDL_RenderRect(renderer, &kNextButton));
+            drawText(renderer, 640, 548, "NEXT WORK ORDER");
+        }
+        else {
+            drawText(
+                renderer,
+                615,
+                548,
+                "ALL WORK ORDERS COMPLETE"
+            );
+        }
+    }
     // ------------------------------
 
 
@@ -412,13 +490,20 @@ void Game::drawPuzzlePreview() {
     drawText(renderer, 985, 130, "AVAILABLE GATES");
 
     // Draw inventory buttons using shared rectangles.
-    checkSDL(SDL_RenderRect(renderer, &kAndButton));
-    checkSDL(SDL_RenderRect(renderer, &kOrButton));
-    checkSDL(SDL_RenderRect(renderer, &kNotButton));
+    if (level.allowsGate(GateType::And)) {
+        checkSDL(SDL_RenderRect(renderer, &kAndButton));
+        drawText(renderer, 1010, 255, "AND");
+    }
 
-    drawText(renderer, 1010, 255, "AND");
-    drawText(renderer, 1010, 330, "OR");
-    drawText(renderer, 1010, 405, "NOT");
+    if (level.allowsGate(GateType::Or)) {
+        checkSDL(SDL_RenderRect(renderer, &kOrButton));
+        drawText(renderer, 1010, 330, "OR");
+    }
+
+    if (level.allowsGate(GateType::Not)) {
+        checkSDL(SDL_RenderRect(renderer, &kNotButton));
+        drawText(renderer, 1010, 405, "NOT");
+    }
 
     // Display player's current selection.
     if (selectedGate_.has_value()) {
@@ -439,7 +524,7 @@ void Game::drawPuzzlePreview() {
     // System log
     // ------------------------------
     drawText(renderer, 60, 610, "SYSTEM LOG");
-    drawText(renderer, 60, 640, "> WORK ORDER 01 LOADED");
+    drawText(renderer, 60, 640, "> WORK ORDER " + level.id + " LOADED");
     drawText(renderer, 60, 660, "> " + statusMessage_);
     // ------------------------------
 

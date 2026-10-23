@@ -1,0 +1,6 @@
+id=02
+title=EMERGENCY LIGHTING
+objective=Restore emergency lighting.
+hint=At least one switch must be active.
+gates=AND,OR
+truth_table=0111

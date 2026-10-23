@@ -27,6 +27,9 @@
     <ClCompile Include="Circuit.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="LevelManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Game.h">
@@ -38,5 +41,15 @@
     <ClInclude Include="Circuit.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Level.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="LevelManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="assets\levels\level01.lvl" />
+    <None Include="assets\levels\level02.lvl" />
   </ItemGroup>
 </Project>

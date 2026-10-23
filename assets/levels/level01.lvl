@@ -1,0 +1,6 @@
+id=01
+title=AUXILIARY POWER
+objective=Restore auxiliary power.
+hint=Both inputs must be active.
+gates=AND,OR,NOT
+truth_table=0001
