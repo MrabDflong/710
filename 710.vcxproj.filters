@@ -53,5 +53,6 @@
     <None Include="assets\levels\level02.lvl" />
     <None Include="assets\levels\level03.lvl" />
     <None Include="assets\levels\level04.lvl" />
+    <None Include="assets\levels\level05.lvl" />
   </ItemGroup>
 </Project>

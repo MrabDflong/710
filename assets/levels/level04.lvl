@@ -2,8 +2,12 @@ id=04
 title=SENSOR DISAGREEMENT
 objective=Detect mismatched sensor signals.
 hint=Output ON when A & B differ.
-gates=AND,OR,NOT
+gates=AND,OR,NOT,NAND,WIRE
 truth_table=0110
+
+arrival_message=NAND COMPONENT AUTHORISED
+optimal_gates=3
+certifies=XOR
 
 socket=s0,490,205,A,B
 socket=s1,490,365,A,B

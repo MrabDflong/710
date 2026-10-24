@@ -14,10 +14,6 @@
 namespace {
 
     // Coordinates used by rendering and input.
-    constexpr SDL_FRect kAndButton  { 990, 235, 215, 50 };
-    constexpr SDL_FRect kOrButton   { 990, 310, 215, 50 };
-    constexpr SDL_FRect kNotButton  { 990, 385, 215, 50 };
-
     constexpr SDL_FRect kRunButton  { 615, 485, 160, 45 };
     constexpr SDL_FRect kResetButton{ 795, 485, 110, 45 };
     constexpr SDL_FRect kNextButton { 615, 535, 290, 34 };
@@ -46,11 +42,7 @@ namespace {
             / "levels";
     }
 
-    [[nodiscard]] bool containsPoint(
-        const SDL_FRect& rect,
-        float x,
-        float y
-    ) {
+    [[nodiscard]] bool containsPoint(const SDL_FRect& rect, float x, float y) {
         return x >= rect.x &&
             x < rect.x + rect.w &&
             y >= rect.y &&
@@ -61,22 +53,19 @@ namespace {
     [[nodiscard]] SDL_FRect socketRect(
         const SocketDefinition& socket
     ) {
-        return { socket.x, socket.y, 100.0f, 56.0f };
+        return {socket.x, socket.y, 100.0f, 56.0f};
     }
 
-    [[nodiscard]] SDL_FRect gateButtonRect(GateType type) {
-        switch (type) {
-        case GateType::And:
-            return kAndButton;
+    [[nodiscard]] SDL_FRect gateButtonRect(std::size_t index) {
+        constexpr float top = 205.0f;
+        constexpr float spacing = 48.0f;
 
-        case GateType::Or:
-            return kOrButton;
-
-        case GateType::Not:
-            return kNotButton;
-        }
-
-        throw std::logic_error("Unknown gate type.");
+        return {
+            990.0f,
+            top + static_cast<float>(index) * spacing,
+            215.0f,
+            41.0f
+        };
     }
 
     [[nodiscard]] SDL_FPoint sourcePosition(
@@ -102,9 +91,7 @@ namespace {
         );
 
         if (it == level.sockets.end()) {
-            throw std::logic_error(
-                "Unknown connection source: " + source
-            );
+            throw std::logic_error("Unknown connection source: " + source);
         }
 
         return {
@@ -123,10 +110,7 @@ namespace {
         }
 
         // Two-input sockets have separate upper/lower pins.
-        return {
-            socket.x,
-            socket.y + (pin == 0 ? 18.0f : 38.0f)
-        };
+        return {socket.x, socket.y + (pin == 0 ? 18.0f : 38.0f)};
     }
 
 
@@ -140,6 +124,15 @@ namespace {
 
         case GateType::Not:
             return "NOT";
+
+        case GateType::Wire:
+            return "WIRE";
+
+        case GateType::Nand:
+            return "NAND";
+
+        case GateType::Xor:
+            return "XOR";
         }
 
         throw std::logic_error("Unknown gate type.");
@@ -151,20 +144,8 @@ namespace {
         }
     }
 
-    void drawText(
-        SDL_Renderer* renderer,
-        float x,
-        float y,
-        const std::string& text
-    ) {
-        checkSDL(
-            SDL_RenderDebugText(
-                renderer,
-                x,
-                y,
-                text.c_str()
-            )
-        );
+    void drawText(SDL_Renderer* renderer, float x, float y, const std::string& text) {
+        checkSDL(SDL_RenderDebugText(renderer, x, y, text.c_str()));
     }
 
 }
@@ -175,9 +156,7 @@ namespace {
 SDLContext::SDLContext() {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         throw std::runtime_error(
-            std::string{ "SDL initialisation failed: " } +
-            SDL_GetError()
-        );
+            std::string{ "SDL initialisation failed: " } + SDL_GetError());
     }
 }
 
@@ -203,31 +182,22 @@ Game::Game() : levelManager_{getLevelDirectory() } {
     );
 
     if (!window_) {
-        throw std::runtime_error(
-            std::string{ "Window creation failed: " } +
-            SDL_GetError()
-        );
+        throw std::runtime_error(std::string{ "Window creation failed: " } + SDL_GetError());
     }
 
     renderer_.reset(SDL_CreateRenderer(window_.get(), nullptr));
 
     if (!renderer_) {
-        throw std::runtime_error(
-            std::string{ "Renderer creation failed: " } +
-            SDL_GetError()
+        throw std::runtime_error(std::string{ "Renderer creation failed: " } + SDL_GetError()
         );
     }
 
     // Maintain UI aspect ratio regardless of window size.
     if (!SDL_SetRenderLogicalPresentation(
-        renderer_.get(),
-        1280,
-        720,
-        SDL_LOGICAL_PRESENTATION_LETTERBOX
-    )) {
+        renderer_.get(), 1280, 720, SDL_LOGICAL_PRESENTATION_LETTERBOX)
+    ) {
         throw std::runtime_error(
-            std::string{ "Logical presentation failed: " } +
-            SDL_GetError()
+            std::string{ "Logical presentation failed: " } + SDL_GetError()
         );
     }
 
@@ -256,13 +226,8 @@ void Game::handleEvents() {
         }
         else if (
             event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
-            (event.button.button == SDL_BUTTON_LEFT ||
-                event.button.button == SDL_BUTTON_RIGHT)
-            ) {
-            checkSDL(SDL_ConvertEventToRenderCoordinates(
-                renderer_.get(),
-                &event
-            ));
+            (event.button.button == SDL_BUTTON_LEFT || event.button.button == SDL_BUTTON_RIGHT)) {
+            checkSDL(SDL_ConvertEventToRenderCoordinates(renderer_.get(), &event));
 
             const bool removeGate = event.button.button == SDL_BUTTON_RIGHT;
 
@@ -301,8 +266,10 @@ void Game::handleMouseClick( float x, float y, bool removeGate) {
 
     // Select an available gate.
     // ------------------------------
-    for (GateType type : level.availableGates) {
-        if (containsPoint(gateButtonRect(type), x, y)) {
+    for (std::size_t i = 0; i < level.availableGates.size(); ++i) {
+        const GateType type = level.availableGates[i];
+
+        if (containsPoint(gateButtonRect(i), x, y)) {
             selectedGate_ = type;
 
             statusMessage_ = gateName(type) + " SELECTED - CLICK A SOCKET";
@@ -380,7 +347,15 @@ void Game::handleMouseClick( float x, float y, bool removeGate) {
 
         verificationStatus_ = VerificationStatus::Untested;
 
-        statusMessage_ = "NEW WORK ORDER LOADED";
+        const Level& nextLevel = levelManager_.currentLevel();
+
+        if (!nextLevel.arrivalMessage.empty()) {
+            statusMessage_ = nextLevel.arrivalMessage;
+        }
+        else {
+            statusMessage_ = "NEW WORK ORDER LOADED";
+        }
+
         return;
     }
     // ------------------------------
@@ -468,17 +443,44 @@ void Game::runPuzzleTests() {
     if (failedTests == 0) {
         verificationStatus_ = VerificationStatus::Passed;
 
-        statusMessage_ = "710 VERIFIED - ALL FOUR TESTS PASSED";
+        // Count every placed component except WIRE.
+        const auto gateCount = static_cast<std::size_t>(
+            std::count_if(
+                placedGates_.begin(),
+                placedGates_.end(),
+                [](const auto& placement) {
+                    return placement.second != GateType::Wire;
+                }
+            )
+        );
+
+        // Optional engineering merit is awarded only when circuit works correctly.
+        if (level.optimalGateCount.has_value() &&
+            gateCount <= *level.optimalGateCount) {
+
+            engineeringMerits_.insert(level.id);
+        }
+
+        // Report component certification if applicable.
+        if (level.certifies.has_value()) {
+            statusMessage_ =
+                "710 VERIFIED - " +
+                gateName(*level.certifies) +
+                " CERTIFIED";
+        }
+        else {
+            statusMessage_ = "710 VERIFIED - ALL FOUR TESTS PASSED";
+        }
     }
     else {
         verificationStatus_ = VerificationStatus::Failed;
 
-        statusMessage_ = "ERROR 409: " + 
-            std::to_string(failedTests) +
-            " OF 4 TESTS FAILED";
+        statusMessage_ =
+            "ERROR 409: " + std::to_string(failedTests) + " OF 4 TESTS FAILED";
     }
     // ------------------------------
 }
+    
 
 
 
@@ -535,9 +537,13 @@ void Game::drawPuzzlePreview() {
         const auto& inputs = kInputCases[i];
 
         const std::string row =
-            std::to_string(static_cast<int>(inputs[0])) + "    " +
-            std::to_string(static_cast<int>(inputs[1])) + "    " +
-            std::to_string( static_cast<int>(level.expectedOutputs[i]));
+            std::to_string(static_cast<int>(inputs[0])) +
+            "    " +
+            std::to_string(static_cast<int>(inputs[1])) +
+            "    " +
+            std::to_string(
+                static_cast<int>(level.expectedOutputs[i])
+            );
 
         drawText(
             renderer,
@@ -545,6 +551,55 @@ void Game::drawPuzzlePreview() {
             330.0f + static_cast<float>(i) * 25.0f,
             row
         );
+    }
+
+    
+    // Gate usage and Engineering Merit
+    // ------------------------------
+    const auto gateCount = static_cast<std::size_t>(
+        std::count_if(
+            placedGates_.begin(),
+            placedGates_.end(),
+            [](const auto& placement) {
+                return placement.second != GateType::Wire;
+            }
+        )
+    );
+
+    drawText(
+        renderer,
+        60,
+        465,
+        "LOGIC GATES: " + std::to_string(gateCount)
+    );
+
+    if (level.optimalGateCount.has_value()) {
+        drawText(
+            renderer,
+            60,
+            490,
+            "MERIT TARGET: " +
+            std::to_string(*level.optimalGateCount)
+        );
+
+        if (engineeringMerits_.contains(level.id)) {
+            drawText(
+                renderer,
+                60,
+                515,
+                "ENGINEERING MERIT: EARNED"
+            );
+        }
+        else if (
+            verificationStatus_ == VerificationStatus::Passed
+            ) {
+            drawText(
+                renderer,
+                60,
+                515,
+                "MERIT: NOT EARNED"
+            );
+        }
     }
     // ------------------------------
 
@@ -671,12 +726,12 @@ void Game::drawPuzzlePreview() {
     // ------------------------------
     drawText(renderer, 985, 130, "AVAILABLE GATES");
 
-    for (GateType type : level.availableGates) {
-        const SDL_FRect rect = gateButtonRect(type);
+    for (std::size_t i = 0; i < level.availableGates.size(); ++i) {
+        const GateType type = level.availableGates[i];
+        const SDL_FRect rect = gateButtonRect(i);
 
         const bool selected =
-            selectedGate_.has_value() &&
-            *selectedGate_ == type;
+            selectedGate_.has_value() && *selectedGate_ == type;
 
         // Give selected gate a filled background.
         if (selected) {
@@ -692,24 +747,19 @@ void Game::drawPuzzlePreview() {
         drawText(
             renderer,
             rect.x + 20.0f,
-            rect.y + 19.0f,
+            rect.y + 15.0f,
             gateName(type)
         );
     }
 
     if (selectedGate_.has_value()) {
-        drawText(
-            renderer,
-            985,
-            480,
-            "SELECTED: " + gateName(*selectedGate_)
-        );
+        drawText(renderer, 985, 500, "SELECTED: " + gateName(*selectedGate_));
     }
     else {
-        drawText(renderer, 985, 480, "SELECTED: NONE");
+        drawText(renderer, 985, 500, "SELECTED: NONE");
     }
 
-    drawText(renderer, 985, 515, "RIGHT CLICK TO REMOVE");
+    drawText(renderer, 985, 535, "RIGHT CLICK TO REMOVE");
     // ------------------------------
 
     

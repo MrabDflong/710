@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 // Manages SDL's lifecycle using RAII
 class SDLContext {
@@ -36,11 +37,9 @@ private:
     void render();
 	void drawPuzzlePreview();
 
-    using WindowPtr = std::unique_ptr<
-        SDL_Window, decltype(&SDL_DestroyWindow)>;
+    using WindowPtr = std::unique_ptr<SDL_Window, decltype(&SDL_DestroyWindow)>;
 
-    using RendererPtr = std::unique_ptr<
-        SDL_Renderer, decltype(&SDL_DestroyRenderer)>;
+    using RendererPtr = std::unique_ptr<SDL_Renderer, decltype(&SDL_DestroyRenderer)>;
 
     // Declaration order matters for destruction.
     SDLContext sdl_;
@@ -63,6 +62,9 @@ private:
     
     // One placed gate per socket ID.
     std::unordered_map<std::string, GateType> placedGates_;
+
+    // Work orders which earned efficiency award.
+    std::unordered_set<std::string> engineeringMerits_;
 
     VerificationStatus verificationStatus_{
         VerificationStatus::Untested

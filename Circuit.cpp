@@ -18,22 +18,21 @@ void Circuit::validateSource(
     std::size_t availableGates
 ) const {
     switch (source.kind) {
-        case SignalSource::Kind::Input:
-            if (source.index >= inputCount_) {
-                throw std::out_of_range(
-                    "Circuit input does not exist."
-                );
-            }
-            return;
+    case SignalSource::Kind::Input:
+        if (source.index >= inputCount_) {
+            throw std::out_of_range(
+                "Circuit input does not exist."
+            );
+        }
+        return;
 
-        case SignalSource::Kind::Gate:
-            if (source.index >= availableGates) {
-                throw std::out_of_range(
-                    "Referenced gate does not exist or "
-                    "has not been added yet."
-                );
-            }
-            return;
+    case SignalSource::Kind::Gate:
+        if (source.index >= availableGates) {
+            throw std::out_of_range(
+                "Referenced gate does not exist or has not been added yet."
+            );
+        }
+        return;
     }
 
     throw std::invalid_argument("Unknown signal source.");

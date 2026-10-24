@@ -1,10 +1,15 @@
 id=03
 title=PUMP SAFETY INTERLOCK
-objective=Restore the pump isolation circuit.
+objective=Restore pump isolation.
 hint=Output OFF when A & B are ON.
-gates=AND,OR,NOT
+gates=AND,OR,NOT,WIRE
 truth_table=1110
 
-socket=s0,545,290,A,B
-socket=s1,745,290,s0
-output=s1
+arrival_message=CABINET 03 OPEN - JUMPER WIRES RECOVERED
+optimal_gates=2
+certifies=NAND
+
+socket=s0,470,240,A
+socket=s1,615,300,s0,B
+socket=s2,770,300,s1
+output=s2

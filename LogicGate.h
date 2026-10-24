@@ -6,7 +6,10 @@
 enum class GateType {
     And,
     Or,
-    Not
+    Not,
+    Wire,
+    Nand,
+    Xor
 };
 
 class LogicGate {

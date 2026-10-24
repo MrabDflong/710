@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -34,6 +36,15 @@ struct Level {
 
     // ID of socket connected to Y.
     std::string outputSocket;
+
+    // Optional target for efficiency award. WIRE does not contribute to gate count.
+    std::optional<std::size_t> optimalGateCount;
+
+    // Component awarded for completing work order.
+    std::optional<GateType> certifies;
+
+    // Narrative message displayed when entering level.
+    std::string arrivalMessage;
 
     [[nodiscard]] bool allowsGate(GateType type) const {
         return std::find(
