@@ -9,8 +9,9 @@ truth_table=01010101011111110111111101010101
 arrival_message=FIFTH SENSOR CHANNEL DETECTED
 optimal_gates=4
 
-socket=s0,470,205,A,B
-socket=s1,470,365,C,D
-socket=s2,625,285,s0,s1
-socket=s3,790,330,s2,E
-output=s3
+socket=s0,500,215,A,B
+socket=s1,500,365,C,D
+socket=s2,635,290,s0,s1
+socket=s3,620,400,E
+socket=s4,785,290,s2,s3
+output=s4

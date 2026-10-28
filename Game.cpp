@@ -741,40 +741,76 @@ void Game::drawPuzzlePreview() {
 
     // External input labels.
     for (std::size_t i = 0; i < level.inputCount; ++i) {
-        const std::string name(
-            1,
-            static_cast<char>('A' + i)
-        );
+        const std::string name(1, static_cast<char>('A' + i));
 
         const SDL_FPoint position = sourcePosition(level, name);
 
-        drawText(
-            renderer,
-            390.0f,
-            position.y - 5.0f,
-            name
-        );
+        drawText(renderer, 390.0f, position.y - 5.0f, name);
+
+        // Mark the terminal where the signal begins.
+        const SDL_FRect terminal{
+            position.x - 3.0f,
+            position.y - 3.0f,
+            6.0f,
+            6.0f
+        };
+
+        checkSDL(SDL_RenderFillRect(renderer, &terminal));
     }
     // ------------------------------
 
  
     // Draw circuit connections
     // ------------------------------
-    checkSDL(SDL_SetRenderDrawColor(renderer, 75, 140, 95, 255));
+    checkSDL(SDL_SetRenderDrawColor(
+        renderer, 75, 140, 95, 255
+    ));
 
     for (const auto& socket : level.sockets) {
         for (std::size_t i = 0; i < socket.sources.size(); ++i) {
-            const SDL_FPoint from =
-                sourcePosition(level, socket.sources[i]);
+            const SDL_FPoint from = sourcePosition(level, socket.sources[i]);
 
-            const SDL_FPoint to =
-                inputPinPosition(socket, i);
+            const SDL_FPoint to = inputPinPosition(socket, i);
 
+            // Keep final vertical section just before destination socket.
+            // Separate two-input connections into slightly different lanes to improve readability.
+            const float pinOffset = socket.sources.size() == 2 ? (i == 0 ? 32.0f : 45.0f) : 18.0f;
+
+            const float proposedBendX = to.x - pinOffset;
+
+            // Allow for sockets positioned close together.
+            const float bendX = proposedBendX > from.x ? proposedBendX : (from.x + to.x) * 0.5f;
+
+            // Segment 1: horizontal from source.
             checkSDL(SDL_RenderLine(
                 renderer,
                 from.x, from.y,
+                bendX, from.y
+            ));
+
+            // Segment 2: vertical towards input pin.
+            checkSDL(SDL_RenderLine(
+                renderer,
+                bendX, from.y,
+                bendX, to.y
+            ));
+
+            // Segment 3: horizontal into socket.
+            checkSDL(SDL_RenderLine(
+                renderer,
+                bendX, to.y,
                 to.x, to.y
             ));
+
+            // Mark actual destination pin.
+            const SDL_FRect pinMarker{
+                to.x - 2.0f,
+                to.y - 2.0f,
+                4.0f,
+                4.0f
+            };
+
+            checkSDL(SDL_RenderFillRect(renderer, &pinMarker));
         }
     }
 
@@ -823,11 +859,20 @@ void Game::drawPuzzlePreview() {
             );
         }
         else {
-            drawText (renderer, socket.x + 25.0f, socket.y + 24.0f, "EMPTY");
+            drawText(renderer, socket.x + 25.0f, socket.y + 24.0f, "EMPTY");
         }
     }
 
-    // Draw testing controls.
+    // Mark final output terminal matching connection markers on external inputs.
+    const SDL_FRect outputTerminal{
+        902.0f,
+        outputPosition.y - 3.0f,
+        6.0f,
+        6.0f
+    };
+
+    checkSDL(SDL_RenderFillRect(renderer, &outputTerminal));
+
     drawText(renderer, 913.0f, outputPosition.y - 4.0f, "Y");
     // ------------------------------
 

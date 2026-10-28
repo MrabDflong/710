@@ -9,7 +9,8 @@ arrival_message=CABINET 03 OPEN - JUMPER WIRES RECOVERED
 optimal_gates=2
 certifies=NAND
 
-socket=s0,470,240,A
-socket=s1,615,300,s0,B
-socket=s2,770,300,s1
-output=s2
+socket=s0,485,230,A
+socket=s1,485,395,B
+socket=s2,635,305,s0,s1
+socket=s3,785,305,s2
+output=s3

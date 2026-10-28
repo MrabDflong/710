@@ -9,5 +9,6 @@ arrival_message=XOR COMPONENT AUTHORISED
 optimal_gates=2
 
 socket=s0,500,245,A
-socket=s1,720,320,s0,B
-output=s1
+socket=s1,500,390,B
+socket=s2,720,320,s0,s1
+output=s2

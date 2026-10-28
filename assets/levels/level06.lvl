@@ -9,7 +9,8 @@ truth_table=0000011101110000
 arrival_message=FOUR-CHANNEL MONITORING ONLINE
 optimal_gates=3
 
-socket=s0,495,215,A,B
-socket=s1,495,365,C,D
-socket=s2,735,285,s0,s1
-output=s2
+socket=s0,500,215,A,B
+socket=s1,500,365,C,D
+socket=s2,635,365,s1
+socket=s3,785,290,s0,s2
+output=s3
