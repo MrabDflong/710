@@ -1,0 +1,16 @@
+id=07
+title=BOREHOLE SAFETY OVERRIDE
+objective=Restore the borehole safety circuit.
+hint=Normal interlock OR emergency bypass.
+inputs=5
+gates=AND,OR,NOT,NAND,XOR,WIRE
+truth_table=01010101011111110111111101010101
+
+arrival_message=FIFTH SENSOR CHANNEL DETECTED
+optimal_gates=4
+
+socket=s0,470,205,A,B
+socket=s1,470,365,C,D
+socket=s2,625,285,s0,s1
+socket=s3,790,330,s2,E
+output=s3

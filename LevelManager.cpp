@@ -212,21 +212,39 @@ Level LevelManager::loadFromFile(
                 throw std::runtime_error(path.string() + ": Empty gate in inventory.");
             }
         }
-        else if (key == "truth_table") {
-            if (value.size() != level.expectedOutputs.size()) {
+        else if (key == "inputs") {
+            std::size_t count{};
+
+            const auto [end, error] = std::from_chars(
+                value.data(),
+                value.data() + value.size(),
+                count
+            );
+
+            if (error != std::errc{} ||
+                end != value.data() + value.size() ||
+                count < 2 ||
+                count > kMaxPuzzleInputs) {
                 throw std::runtime_error(
-                    path.string() + ": Truth table must contain 4 outputs."
+                    path.string() + ": Input count must be between 2 and " +
+                    std::to_string(kMaxPuzzleInputs) + "."
                 );
             }
 
-            for (std::size_t i = 0; i < value.size(); ++i) {
-                if (value[i] != '0' && value[i] != '1') {
+            level.inputCount = count;
+        }
+        else if (key == "truth_table") {
+            level.expectedOutputs.clear();
+            level.expectedOutputs.reserve(value.size());
+
+            for (char output : value) {
+                if (output != '0' && output != '1') {
                     throw std::runtime_error(
                         path.string() + ": Truth table must contain only 0 or 1."
                     );
                 }
 
-                level.expectedOutputs[i] = value[i] == '1';
+                level.expectedOutputs.push_back(output == '1');
             }
         }
         else if (key == "socket") {
@@ -283,6 +301,20 @@ Level LevelManager::loadFromFile(
         }
     }
 
+    const std::size_t expectedRows =
+        std::size_t{ 1 } << level.inputCount;
+
+    if (level.expectedOutputs.size() != expectedRows) {
+        throw std::runtime_error(
+            path.string() +
+            ": Truth table requires " +
+            std::to_string(expectedRows) +
+            " outputs for " +
+            std::to_string(level.inputCount) +
+            " inputs."
+        );
+    }
+
     if (level.availableGates.empty() || level.sockets.empty()) {
         throw std::runtime_error(
             path.string() + ": Level needs gates and at least one socket."
@@ -292,8 +324,15 @@ Level LevelManager::loadFromFile(
     // Validate socket IDs and connection order.
     std::unordered_set<std::string> definedSockets;
 
+    // External inputs (A to whatever) determined by level's input count.
+    const auto isExternalInput = [&](const std::string& id) {
+        return id.size() == 1 &&
+            id[0] >= 'A' &&
+            static_cast<std::size_t>(id[0] - 'A') < level.inputCount;
+        };
+
     for (const auto& socket : level.sockets) {
-        if (socket.id == "A" || socket.id == "B" ||
+        if (isExternalInput(socket.id) ||
             !definedSockets.insert(socket.id).second) {
             throw std::runtime_error(
                 path.string() + ": Duplicate or reserved socket ID: " + socket.id
@@ -302,16 +341,16 @@ Level LevelManager::loadFromFile(
 
         // Each source must be an external input or a socket defined before this one.
         for (const auto& source : socket.sources) {
-            if (source != "A" && source != "B" &&
-                !definedSockets.contains(source)) {
-                throw std::runtime_error(
-                    path.string() + ": Invalid or forward connection: " + source
-                );
-            }
-
             if (source == socket.id) {
                 throw std::runtime_error(
                     path.string() + ": Socket cannot connect to itself."
+                );
+            }
+
+            if (!isExternalInput(source) &&
+                !definedSockets.contains(source)) {
+                throw std::runtime_error(
+                    path.string() + ": Invalid or forward connection: " + source
                 );
             }
         }

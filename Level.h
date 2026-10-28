@@ -3,11 +3,14 @@
 #include "LogicGate.h"
 
 #include <algorithm>
-#include <array>
+//#include <array>
 #include <cstddef>
 #include <optional>
 #include <string>
 #include <vector>
+
+// Maximum external inputs supported by current UI.
+inline constexpr std::size_t kMaxPuzzleInputs = 8;
 
 // Describes one gate position on circuit board.
 struct SocketDefinition {
@@ -29,8 +32,11 @@ struct Level {
 
     std::vector<GateType> availableGates;
 
-    // Expected outputs for 00, 01, 10 and 11.
-    std::array<bool, 4> expectedOutputs{};
+    // Two inputs by default for existing level files.
+    std::size_t inputCount{ 2 };
+
+    // Expected outputs in binary input order:
+    std::vector<bool> expectedOutputs;
 
     std::vector<SocketDefinition> sockets;
 

@@ -2,8 +2,10 @@
 #include "Circuit.h"
 
 #include <algorithm>
-#include <array>
+#include <cstddef>
 #include <filesystem>
+#include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -17,14 +19,20 @@ namespace {
     constexpr SDL_FRect kRunButton  { 615, 485, 160, 45 };
     constexpr SDL_FRect kResetButton{ 795, 485, 110, 45 };
     constexpr SDL_FRect kNextButton { 615, 535, 290, 34 };
+    constexpr std::size_t kTruthRowsPerPage = 5;
 
-    // Input combinations in truth table order.
-    constexpr std::array kInputCases{
-        std::array{false, false},
-        std::array{false, true},
-        std::array{true, false},
-        std::array{true, true}
-    };
+
+    // Returns value of a particular input in a truth table row. A is most significant input, then B, C, etc.
+    [[nodiscard]] bool inputValueForRow(
+        std::size_t row,
+        std::size_t inputIndex,
+        std::size_t inputCount
+    ) {
+        const std::size_t bitPosition =
+            inputCount - inputIndex - 1;
+
+        return (row & (std::size_t{ 1 } << bitPosition)) != 0;
+    }
 
     // Find level files relative to exe.
     [[nodiscard]] std::filesystem::path getLevelDirectory() {
@@ -72,16 +80,36 @@ namespace {
         const Level& level,
         const std::string& source
     ) {
-        // Fixed locations for external inputs.
-        if (source == "A") {
-            return { 430.0f, 280.0f };
+        if (source.size() == 1 &&
+            source[0] >= 'A' &&
+            static_cast<std::size_t>(source[0] - 'A') <
+            level.inputCount) {
+
+            const std::size_t index =
+                static_cast<std::size_t>(source[0] - 'A');
+
+            // Preserve layout of existing puzzles.
+            if (level.inputCount == 2) {
+                return {
+                    430.0f,
+                    index == 0 ? 280.0f : 420.0f
+                };
+            }
+
+            // Distribute additional inputs vertically.
+            constexpr float top = 205.0f;
+            constexpr float bottom = 445.0f;
+
+            const float fraction =
+                static_cast<float>(index) /
+                static_cast<float>(level.inputCount - 1);
+
+            return {
+                430.0f,
+                top + (bottom - top) * fraction
+            };
         }
 
-        if (source == "B") {
-            return { 430.0f, 420.0f };
-        }
-
-        // Otherwise, the signal comes from another socket.
         const auto it = std::find_if(
             level.sockets.begin(),
             level.sockets.end(),
@@ -231,7 +259,32 @@ void Game::handleEvents() {
 
             const bool removeGate = event.button.button == SDL_BUTTON_RIGHT;
 
-            handleMouseClick(event.button.x, event.button.y, removeGate);
+            handleMouseClick(
+                event.button.x,
+                event.button.y,
+                removeGate
+            );
+        }
+        else if (event.type == SDL_EVENT_KEY_DOWN) {
+            const Level& level = levelManager_.currentLevel();
+
+            const std::size_t pageCount =
+                (level.expectedOutputs.size() +
+                    kTruthRowsPerPage - 1) /
+                kTruthRowsPerPage;
+
+            if (event.key.scancode == SDL_SCANCODE_PAGEUP) {
+                if (truthTablePage_ > 0) {
+                    --truthTablePage_;
+                }
+            }
+            else if (
+                event.key.scancode == SDL_SCANCODE_PAGEDOWN
+                ) {
+                if (truthTablePage_ + 1 < pageCount) {
+                    ++truthTablePage_;
+                }
+            }
         }
     }
 }
@@ -344,6 +397,8 @@ void Game::handleMouseClick( float x, float y, bool removeGate) {
 
         selectedGate_.reset();
         placedGates_.clear();
+        truthTablePage_ = 0;
+
 
         verificationStatus_ = VerificationStatus::Untested;
 
@@ -384,7 +439,7 @@ void Game::runPuzzleTests() {
 
     // Construct the circuit
     // ------------------------------
-    Circuit circuit{ 2 };
+    Circuit circuit{ level.inputCount };
 
     // Maps level socket IDs to Circuit gate IDs.
     std::unordered_map<std::string, Circuit::GateId> gateIds;
@@ -393,11 +448,17 @@ void Game::runPuzzleTests() {
         std::vector<Circuit::SignalSource> sources;
 
         for (const auto& source : socket.sources) {
-            if (source == "A") {
-                sources.push_back(Circuit::SignalSource::input(0));
-            }
-            else if (source == "B") {
-                sources.push_back(Circuit::SignalSource::input(1));
+            if (source.size() == 1 &&
+                source[0] >= 'A' &&
+                static_cast<std::size_t>(source[0] - 'A') <
+                level.inputCount) {
+
+                const std::size_t inputIndex =
+                    static_cast<std::size_t>(source[0] - 'A');
+
+                sources.push_back(
+                    Circuit::SignalSource::input(inputIndex)
+                );
             }
             else {
                 // Source refers to a previous socket.
@@ -428,10 +489,21 @@ void Game::runPuzzleTests() {
     // ------------------------------
     std::size_t failedTests = 0;
 
-    for (std::size_t i = 0; i < kInputCases.size(); ++i) {
-        const bool actual = circuit.evaluate(kInputCases[i]);
+    // Span based circuit needs contiguous storage. Bool array provides it.
+    auto inputs = std::make_unique<bool[]>(level.inputCount);
 
-        if (actual != level.expectedOutputs[i]) {
+    for (std::size_t row = 0; row < level.expectedOutputs.size(); ++row) {
+
+        for (std::size_t input = 0; input < level.inputCount; ++input) {
+
+            inputs[input] = inputValueForRow(row, input, level.inputCount);
+        }
+
+        const bool actual = circuit.evaluate(
+            std::span<const bool>{ inputs.get(), level.inputCount }
+        );
+
+        if (actual != level.expectedOutputs[row]) {
             ++failedTests;
         }
     }
@@ -469,14 +541,16 @@ void Game::runPuzzleTests() {
                 " CERTIFIED";
         }
         else {
-            statusMessage_ = "710 VERIFIED - ALL FOUR TESTS PASSED";
+            statusMessage_ =
+                "710 VERIFIED - ALL " + std::to_string(level.expectedOutputs.size()) + " TESTS PASSED";
         }
     }
     else {
         verificationStatus_ = VerificationStatus::Failed;
 
         statusMessage_ =
-            "ERROR 409: " + std::to_string(failedTests) + " OF 4 TESTS FAILED";
+            "ERROR 409: " + std::to_string(failedTests) + " OF " +
+            std::to_string(level.expectedOutputs.size()) + " TESTS FAILED";
     }
     // ------------------------------
 }
@@ -531,27 +605,70 @@ void Game::drawPuzzlePreview() {
     drawText(renderer, 60, 200, level.hint);
 
     drawText(renderer, 60, 270, "TARGET TRUTH TABLE");
-    drawText(renderer, 60, 305, "A    B    Y");
 
-    for (std::size_t i = 0; i < kInputCases.size(); ++i) {
-        const auto& inputs = kInputCases[i];
+    // Build the heading.
+    std::string heading;
 
-        const std::string row =
-            std::to_string(static_cast<int>(inputs[0])) +
-            "    " +
-            std::to_string(static_cast<int>(inputs[1])) +
-            "    " +
-            std::to_string(
-                static_cast<int>(level.expectedOutputs[i])
+    for (std::size_t i = 0; i < level.inputCount; ++i) {
+        heading += static_cast<char>('A' + i);
+        heading += "  ";
+    }
+
+    heading += "| Y";
+
+    drawText(renderer, 60, 305, heading);
+
+    // Determine which truth-table rows are visible.
+    const std::size_t firstRow = truthTablePage_ * kTruthRowsPerPage;
+
+    const std::size_t lastRow = std::min(
+        firstRow + kTruthRowsPerPage,
+        level.expectedOutputs.size()
+    );
+
+    for (std::size_t row = firstRow; row < lastRow; ++row) {
+
+        std::string rowText;
+
+        for (std::size_t input = 0; input < level.inputCount; ++input) {
+
+            const bool value = inputValueForRow(
+                row,
+                input,
+                level.inputCount
             );
+
+            rowText += value ? '1' : '0';
+            rowText += "  ";
+        }
+
+        rowText += "| ";
+        rowText += level.expectedOutputs[row] ? '1' : '0';
 
         drawText(
             renderer,
-            60,
-            330.0f + static_cast<float>(i) * 25.0f,
-            row
+            60.0f,
+            330.0f +
+                static_cast<float>(row - firstRow) * 21.0f,
+            rowText
         );
     }
+
+    const std::size_t pageCount =
+        (level.expectedOutputs.size() +
+            kTruthRowsPerPage - 1) /
+        kTruthRowsPerPage;
+
+    drawText(
+        renderer,
+        60,
+        440,
+        "PAGE " +
+        std::to_string(truthTablePage_ + 1) +
+        "/" +
+        std::to_string(pageCount) +
+        "  PGUP/PGDN"
+    );
 
     
     // Gate usage and Engineering Merit
@@ -623,8 +740,21 @@ void Game::drawPuzzlePreview() {
     }
 
     // External input labels.
-    drawText(renderer, 390, 275, "A");
-    drawText(renderer, 390, 415, "B");
+    for (std::size_t i = 0; i < level.inputCount; ++i) {
+        const std::string name(
+            1,
+            static_cast<char>('A' + i)
+        );
+
+        const SDL_FPoint position = sourcePosition(level, name);
+
+        drawText(
+            renderer,
+            390.0f,
+            position.y - 5.0f,
+            name
+        );
+    }
     // ------------------------------
 
  

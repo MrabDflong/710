@@ -1,0 +1,15 @@
+id=06
+title=EMERGENCY PRESSURE INTERLOCK
+objective=Restore the pressure override.
+hint=Sensor mismatch AND backup pressure.
+inputs=4
+gates=AND,OR,NOT,NAND,XOR,WIRE
+truth_table=0000011101110000
+
+arrival_message=FOUR-CHANNEL MONITORING ONLINE
+optimal_gates=3
+
+socket=s0,495,215,A,B
+socket=s1,495,365,C,D
+socket=s2,735,285,s0,s1
+output=s2

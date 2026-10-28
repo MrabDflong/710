@@ -63,6 +63,9 @@ private:
     // One placed gate per socket ID.
     std::unordered_map<std::string, GateType> placedGates_;
 
+    // Current page of displayed truth table.
+    std::size_t truthTablePage_{ 0 };
+
     // Work orders which earned efficiency award.
     std::unordered_set<std::string> engineeringMerits_;
 
