@@ -59,5 +59,6 @@
     <None Include="validate_710_level.py" />
     <None Include="assets\levels\level08.lvl" />
     <None Include="assets\levels\level09.lvl" />
+    <None Include=".gitignore" />
   </ItemGroup>
 </Project>

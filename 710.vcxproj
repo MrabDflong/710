@@ -170,6 +170,7 @@ xcopy /E /I /Y "$(ProjectDir)assets" "$(TargetDir)assets" &gt;nul
     <ClInclude Include="LogicGate.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include=".gitignore" />
     <None Include="assets\levels\level01.lvl" />
     <None Include="assets\levels\level02.lvl" />
     <None Include="assets\levels\level03.lvl" />
