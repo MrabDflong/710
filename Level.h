@@ -3,7 +3,7 @@
 #include "LogicGate.h"
 
 #include <algorithm>
-//#include <array>
+#include <array>
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -29,6 +29,15 @@ struct Level {
     std::string title;
     std::string objective;
     std::string hint;
+
+    // Full explanation displayed in the briefing screen.
+    std::string briefing;
+
+    // Descriptions for external inputs (A to H).
+    std::array<std::string, kMaxPuzzleInputs> inputDescriptions{};
+
+    // What final output represents.
+    std::string outputDescription;
 
     std::vector<GateType> availableGates;
 

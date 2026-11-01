@@ -103,9 +103,8 @@ namespace {
 
 // LevelManager
 // ------------------------------
-LevelManager::LevelManager(
-    const std::filesystem::path& directory
-) {
+LevelManager::LevelManager(const std::filesystem::path& directory) {
+
     if (!std::filesystem::is_directory(directory)) {
         throw std::runtime_error("Level directory not found: " + directory.string());
     }
@@ -132,9 +131,8 @@ LevelManager::LevelManager(
     }
 }
 
-Level LevelManager::loadFromFile(
-    const std::filesystem::path& path
-) {
+Level LevelManager::loadFromFile(const std::filesystem::path& path) {
+
     std::ifstream file{ path };
 
     if (!file.is_open()) {
@@ -191,6 +189,22 @@ Level LevelManager::loadFromFile(
         }
         else if (key == "hint") {
             level.hint = value;
+        }
+        else if (key == "briefing") {
+            level.briefing = value;
+        }
+        else if (key == "output_description") {
+            level.outputDescription = value;
+        }
+        else if (
+            key.size() == 7 &&
+            key.starts_with("input_") &&
+            key[6] >= 'A' &&
+            key[6] < static_cast<char>('A' + kMaxPuzzleInputs)
+            ) {
+            const std::size_t index = static_cast<std::size_t>(key[6] - 'A');
+
+            level.inputDescriptions[index] = value;
         }
         else if (key == "gates") {
             std::stringstream stream{ value };
@@ -373,8 +387,26 @@ Level LevelManager::loadFromFile(
 
     if (!definedSockets.contains(level.outputSocket)) {
         throw std::runtime_error(
-            path.string() + ": Output references an unknown socket."
+            path.string() +
+            ": Output references an unknown socket."
         );
+    }
+
+    // Reject descriptions for inputs beyond this level's declared input count.
+    for (std::size_t i = level.inputCount;
+        i < kMaxPuzzleInputs;
+        ++i) {
+
+        if (!level.inputDescriptions[i].empty()) {
+            throw std::runtime_error(
+                path.string() +
+                ": Description provided for unavailable input " +
+                std::string(
+                    1,
+                    static_cast<char>('A' + i)
+                )
+            );
+        }
     }
 
     if (level.optimalGateCount.has_value() &&
@@ -405,6 +437,10 @@ const Level& LevelManager::currentLevel() const {
     return levels_.at(currentIndex_);
 }
 
+std::size_t LevelManager::currentIndex() const noexcept {
+    return currentIndex_;
+}
+
 bool LevelManager::hasNextLevel() const noexcept {
     return currentIndex_ + 1 < levels_.size();
 }
@@ -415,5 +451,14 @@ bool LevelManager::nextLevel() {
     }
 
     ++currentIndex_;
+    return true;
+}
+
+bool LevelManager::goToLevel(std::size_t index) {
+    if (index >= levels_.size()) {
+        return false;
+    }
+
+    currentIndex_ = index;
     return true;
 }

@@ -1,7 +1,11 @@
 id=03
 title=PUMP SAFETY INTERLOCK
-objective=Restore pump isolation.
-hint=Output OFF when A & B are ON.
+objective=Restore pump monitoring.
+hint=Raise an alarm if a check fails.
+briefing=The monitoring system must raise an alarm whenever either safety check has not passed. The alarm must switch OFF only when both checks are confirmed.
+input_A=Pump seal inspection passed
+input_B=Pressure inspection passed
+output_description=Pump safety alarm
 gates=AND,OR,NOT,WIRE
 truth_table=1110
 

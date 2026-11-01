@@ -1,0 +1,33 @@
+id=09
+title=PRESSURE SENSOR VOTING ARRAY
+objective=Restore borehole pressure confirmation.
+hint=Three or more pressure alarms must agree.
+briefing=Four independent pressure alarms monitor the borehole. Authorise the emergency shutdown only if at least three channels report excessive pressure. One or two active alarms are insufficient to trigger this output.
+input_A=Pressure alarm channel 1
+input_B=Pressure alarm channel 2
+input_C=Pressure alarm channel 3
+input_D=Pressure alarm channel 4
+output_description=Emergency pressure shutdown authorisation
+
+inputs=4
+gates=AND,OR,NOT,NAND,XOR,WIRE
+truth_table=0000000100010111
+
+arrival_message=QUADRUPLE PRESSURE VOTING ACTIVE
+optimal_gates=7
+
+socket=s0,465,190,A
+socket=s1,465,265,B
+socket=s2,465,340,C
+socket=s3,465,415,D
+
+socket=s4,575,190,s0,s1
+socket=s5,575,265,s0,s1
+socket=s6,575,340,s2,s3
+socket=s7,575,415,s2,s3
+
+socket=s8,690,230,s4,s7
+socket=s9,690,335,s5,s6
+
+socket=s10,800,285,s8,s9
+output=s10

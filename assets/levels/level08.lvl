@@ -1,0 +1,26 @@
+id=08
+title=COMMUNICATIONS LINE SELECTOR
+objective=Restore transmission source selection.
+hint=The routing switch chooses which signal reaches Y.
+briefing=The transmitter receives one of two binary data signals. When the route selector is OFF, output Y must copy the primary signal A. When the selector is ON, output Y must copy backup signal C. Changes to the unselected signal must have no effect on Y.
+
+input_A=Primary communications data
+input_B=Route selector: OFF for primary, ON for backup
+input_C=Backup communications data
+output_description=Data transmitted to the communications uplink
+
+inputs=3
+gates=AND,OR,NOT,NAND,XOR,WIRE
+truth_table=00011101
+
+arrival_message=COMMUNICATIONS ROUTING PANEL ACCESSIBLE
+optimal_gates=4
+
+socket=s0,500,205,A
+socket=s1,500,285,B
+socket=s2,500,365,B
+socket=s3,500,445,C
+socket=s4,640,255,s0,s1
+socket=s5,640,390,s2,s3
+socket=s6,785,320,s4,s5
+output=s6

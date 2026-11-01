@@ -1,7 +1,11 @@
 id=01
 title=AUXILIARY POWER
 objective=Restore auxiliary power.
-hint=Both inputs must be active.
+hint=Both safety checks must pass.
+briefing=Auxiliary power may be energised only when both safety checks are confirmed. If either check is inactive, the power output must remain OFF.
+input_A=Electrical isolation check passed
+input_B=Backup supply check passed
+output_description=Auxiliary power enable
 gates=AND,OR
 truth_table=0001
 

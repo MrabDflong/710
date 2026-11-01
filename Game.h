@@ -36,6 +36,7 @@ private:
 
     void render();
 	void drawPuzzlePreview();
+	void drawWorkOrderBriefing();
 
     using WindowPtr = std::unique_ptr<SDL_Window, decltype(&SDL_DestroyWindow)>;
 
@@ -65,6 +66,9 @@ private:
 
     // Current page of displayed truth table.
     std::size_t truthTablePage_{ 0 };
+
+    // Whether detailed briefing is open.
+    bool showBriefing_{ false };
 
     // Work orders which earned efficiency award.
     std::unordered_set<std::string> engineeringMerits_;

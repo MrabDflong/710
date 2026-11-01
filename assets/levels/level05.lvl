@@ -1,7 +1,11 @@
 id=05
 title=REDUNDANT SENSOR CHECK
-objective=Check agreement between two sensors.
-hint=Output ON when both inputs match.
+objective=Verify redundant sensor agreement.
+hint=Matching readings must activate Y.
+briefing=The two redundant sensors must agree before the system authorises operation. Both inactive and both active readings count as agreement. Differing readings must disable authorisation.
+input_A=Redundant sensor channel 1
+input_B=Redundant sensor channel 2
+output_description=Sensor agreement authorisation
 gates=AND,OR,NOT,NAND,XOR,WIRE
 truth_table=1001
 

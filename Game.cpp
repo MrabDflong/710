@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <memory>
 #include <span>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -16,10 +17,15 @@
 namespace {
 
     // Coordinates used by rendering and input.
+    constexpr float kSocketWidth = 78.0f;
+    constexpr float kSocketHeight = 46.0f;
+    
     constexpr SDL_FRect kRunButton  { 615, 485, 160, 45 };
     constexpr SDL_FRect kResetButton{ 795, 485, 110, 45 };
     constexpr SDL_FRect kNextButton { 615, 535, 290, 34 };
     constexpr std::size_t kTruthRowsPerPage = 5;
+    constexpr SDL_FRect kBriefButton{ 60.0f, 238.0f, 245.0f, 22.0f };
+    constexpr SDL_FRect kBriefCloseButton{ 920.0f, 560.0f, 140.0f, 30.0f };
 
 
     // Returns value of a particular input in a truth table row. A is most significant input, then B, C, etc.
@@ -58,10 +64,9 @@ namespace {
     }
 
 
-    [[nodiscard]] SDL_FRect socketRect(
-        const SocketDefinition& socket
-    ) {
-        return {socket.x, socket.y, 100.0f, 56.0f};
+    [[nodiscard]] SDL_FRect socketRect(const SocketDefinition& socket) {
+
+        return {socket.x, socket.y, kSocketWidth, kSocketHeight};
     }
 
     [[nodiscard]] SDL_FRect gateButtonRect(std::size_t index) {
@@ -92,7 +97,7 @@ namespace {
             if (level.inputCount == 2) {
                 return {
                     430.0f,
-                    index == 0 ? 280.0f : 420.0f
+                    index == 0 ? 230.0f : 420.0f
                 };
             }
 
@@ -122,24 +127,96 @@ namespace {
             throw std::logic_error("Unknown connection source: " + source);
         }
 
-        return {
-            it->x + 100.0f,
-            it->y + 28.0f
-        };
+        return {it->x + kSocketWidth,it->y + kSocketHeight * 0.5f};
     }
 
-    [[nodiscard]] SDL_FPoint inputPinPosition(
-        const SocketDefinition& socket,
-        std::size_t pin
-    ) {
+    [[nodiscard]] SDL_FPoint inputPinPosition(const SocketDefinition& socket, std::size_t pin) {
+
         // A single-input socket has one centred pin.
         if (socket.sources.size() == 1) {
-            return { socket.x, socket.y + 28.0f };
+            return { socket.x, socket.y + kSocketHeight * 0.5f };
         }
 
         // Two-input sockets have separate upper/lower pins.
-        return {socket.x, socket.y + (pin == 0 ? 18.0f : 38.0f)};
+        return {socket.x, socket.y + (pin == 0 ? 14.0f : 32.0f)};
     }
+
+
+    void checkSDL(bool success);
+
+    void drawSignalConnections(SDL_Renderer* renderer, const Level& level, const std::string& source, std::size_t sourceIndex) {
+
+        // Find every input pin connected to this source.
+        std::vector<SDL_FPoint> destinations;
+
+        for (const auto& socket : level.sockets) {
+            for (std::size_t pin = 0; pin < socket.sources.size(); ++pin) {
+
+                if (socket.sources[pin] == source) {
+                    destinations.push_back(inputPinPosition(socket, pin));
+                }
+            }
+        }
+
+        if (destinations.empty()) {
+            return;
+        }
+
+        const SDL_FPoint from = sourcePosition(level, source);
+
+        // Find nearest destination column.
+        float nearestX = destinations.front().x;
+
+        for (const auto& point : destinations) {
+            nearestX = std::min(nearestX, point.x);
+        }
+
+        // Give neighbouring signal sources different routing lanes within the gap between socket columns.
+        const float laneFraction = 0.25f + 0.15f * static_cast<float>(sourceIndex % 4);
+
+        const float laneX = from.x + (nearestX - from.x) * laneFraction;
+
+        // Shared vertical trunk must span both the source and every destination.
+        float minY = from.y;
+        float maxY = from.y;
+
+        for (const auto& point : destinations) {
+            minY = std::min(minY, point.y);
+            maxY = std::max(maxY, point.y);
+        }
+
+        // Horizontal segment leaving the source.
+        checkSDL(SDL_RenderLine(renderer, from.x, from.y, laneX, from.y));
+
+        // Shared vertical routing trunk.
+        checkSDL(SDL_RenderLine(renderer, laneX, minY, laneX, maxY));
+
+        // Horizontal branches entering destination pins.
+        for (const auto& point : destinations) {
+            checkSDL(SDL_RenderLine(renderer, laneX, point.y, point.x, point.y));
+        }
+
+        // Mark real signal junctions when source feeds more than one destination.
+        if (destinations.size() > 1) {
+            const auto drawJunction = [&](float y) {
+                const SDL_FRect marker{
+                    laneX - 2.5f,
+                    y - 2.5f,
+                    5.0f,
+                    5.0f
+                };
+
+                checkSDL(SDL_RenderFillRect(renderer, &marker));
+            };
+
+            drawJunction(from.y);
+
+            for (const auto& point : destinations) {
+                drawJunction(point.y);
+            }
+        }
+    }
+
 
 
     [[nodiscard]] std::string gateName(GateType type) {
@@ -176,6 +253,84 @@ namespace {
         checkSDL(SDL_RenderDebugText(renderer, x, y, text.c_str()));
     }
 
+    [[nodiscard]] std::vector<std::string> wrapText(const std::string& text, std::size_t maxChars) {
+
+        std::vector<std::string> lines;
+
+        if (maxChars == 0) {
+            return lines;
+        }
+
+        std::istringstream stream{ text };
+        std::string word;
+        std::string line;
+
+        while (stream >> word) {
+            // Handle individual words longer than the available width.
+            while (word.size() > maxChars) {
+                if (!line.empty()) {
+                    lines.push_back(line);
+                    line.clear();
+                }
+
+                lines.push_back(word.substr(0, maxChars));
+                word.erase(0, maxChars);
+            }
+
+            if (word.empty()) {
+                continue;
+            }
+
+            if (line.empty()) {
+                line = word;
+            }
+            else if (line.size() + 1 + word.size() <= maxChars) {
+                line += " " + word;
+            }
+            else {
+                lines.push_back(line);
+                line = word;
+            }
+        }
+
+        if (!line.empty()) {
+            lines.push_back(line);
+        }
+
+        return lines;
+    }
+
+    void drawWrappedText(
+        SDL_Renderer* renderer,
+        float x,
+        float y,
+        const std::string& text,
+        std::size_t maxChars,
+        std::size_t maxLines,
+        float lineHeight = 18.0f
+    ) {
+        const auto lines = wrapText(text, maxChars);
+
+        const std::size_t count = std::min(lines.size(), maxLines);
+
+        for (std::size_t i = 0; i < count; ++i) {
+            std::string line = lines[i];
+
+            // Abbreviate the preview when more lines exist.
+            // The complete briefing remains accessible separately.
+            if (i + 1 == count &&
+                lines.size() > maxLines && maxChars >= 3) {
+
+                if (line.size() > maxChars - 3) {
+                    line.resize(maxChars - 3);
+                }
+
+                line += "...";
+            }
+
+            drawText(renderer, x, y + static_cast<float>(i) * lineHeight, line);
+        }
+    }
 }
 
 
@@ -266,12 +421,78 @@ void Game::handleEvents() {
             );
         }
         else if (event.type == SDL_EVENT_KEY_DOWN) {
+
+#ifndef NDEBUG
+            // Debug-only level navigation.
+            if (!event.key.repeat) {
+                const SDL_Scancode key = event.key.scancode;
+
+                const std::size_t current = levelManager_.currentIndex();
+
+                std::size_t target = current;
+                bool skipRequested = false;
+
+                // Previous work order.
+                if (key == SDL_SCANCODE_F6 && current > 0) {
+                    target = current - 1;
+                    skipRequested = true;
+                }
+
+                // Next work order.
+                else if (key == SDL_SCANCODE_F7) {
+                    target = current + 1;
+                    skipRequested = true;
+                }
+
+                // Ctrl + 1 to Ctrl + 9.
+                else if (
+                    (event.key.mod & SDL_KMOD_CTRL) != 0 &&
+                    key >= SDL_SCANCODE_1 &&
+                    key <= SDL_SCANCODE_9
+                    ) {
+                    target = static_cast<std::size_t>(key - SDL_SCANCODE_1);
+
+                    skipRequested = true;
+                }
+
+                if (skipRequested && levelManager_.goToLevel(target)) {
+
+                    // Clear previous level's state.
+                    selectedGate_.reset();
+                    placedGates_.clear();
+
+                    truthTablePage_ = 0;
+                    showBriefing_ = false;
+
+                    verificationStatus_ =
+                        VerificationStatus::Untested;
+
+                    statusMessage_ = "DEBUG: WORK ORDER " + levelManager_.currentLevel().id + " LOADED";
+
+                    continue;
+                }
+            }
+#endif
+
+            if (event.key.scancode == SDL_SCANCODE_I &&
+                !event.key.repeat) {
+
+                showBriefing_ = !showBriefing_;
+                continue;
+            }
+
+            if (showBriefing_) {
+                if (event.key.scancode == SDL_SCANCODE_ESCAPE) {
+                    showBriefing_ = false;
+                }
+
+                continue;
+            }
+
             const Level& level = levelManager_.currentLevel();
 
             const std::size_t pageCount =
-                (level.expectedOutputs.size() +
-                    kTruthRowsPerPage - 1) /
-                kTruthRowsPerPage;
+                (level.expectedOutputs.size() + kTruthRowsPerPage - 1) / kTruthRowsPerPage;
 
             if (event.key.scancode == SDL_SCANCODE_PAGEUP) {
                 if (truthTablePage_ > 0) {
@@ -292,7 +513,26 @@ void Game::handleEvents() {
 
 
 void Game::handleMouseClick( float x, float y, bool removeGate) {
+    
+    
     const Level& level = levelManager_.currentLevel();
+
+    // Prevent interactions with circuit while briefing is open.
+    if (showBriefing_) {
+        if (!removeGate && containsPoint(kBriefCloseButton, x, y)) {
+
+            showBriefing_ = false;
+        }
+
+        return;
+    }
+
+    // Open briefing from objective panel.
+    if (!removeGate && containsPoint(kBriefButton, x, y)) {
+
+        showBriefing_ = true;
+        return;
+    }
 
 
     // Right click removes a gate.
@@ -556,7 +796,66 @@ void Game::runPuzzleTests() {
 }
     
 
+void Game::drawWorkOrderBriefing() {
+    SDL_Renderer* renderer = renderer_.get();
+    const Level& level = levelManager_.currentLevel();
 
+    const SDL_FRect panel{
+        170.0f, 105.0f, 940.0f, 505.0f
+    };
+
+    // Opaque background hides circuit beneath.
+    checkSDL(SDL_SetRenderDrawColor(renderer, 5, 22, 12, 255));
+
+    checkSDL(SDL_RenderFillRect(renderer, &panel));
+
+    // Restore terminal's green drawing colour.
+    checkSDL(SDL_SetRenderDrawColor(renderer, 115, 220, 145, 255));
+
+    checkSDL(SDL_RenderRect(renderer, &panel));
+
+    drawText( renderer, 190, 135, "WORK ORDER " + level.id + " - ENGINEERING BRIEF");
+
+    drawText(renderer, 190, 175, "REQUIRED BEHAVIOUR");
+
+    const std::string& explanation = level.briefing.empty() ? level.hint : level.briefing;
+
+    drawWrappedText(
+        renderer, 190, 200,
+        explanation, 108, 3, 19.0f
+    );
+
+    drawText(renderer, 190, 282, "SIGNAL DIRECTORY");
+
+    for (std::size_t i = 0; i < level.inputCount; ++i) {
+
+        const std::string name( 1, static_cast<char>('A' + i));
+
+        const std::string& description = level.inputDescriptions[i];
+
+        const std::string label = name + " - " + (description.empty() ? "External input" : description);
+
+        drawWrappedText(
+            renderer,
+            190,
+            308.0f + static_cast<float>(i) * 25.0f,
+            label,
+            105,
+            1
+        );
+    }
+
+    const std::string outputLabel = "Y - " + (level.outputDescription.empty() ? std::string{ "Circuit output" } : level.outputDescription);
+
+    drawWrappedText(
+        renderer, 190, 522,
+        outputLabel, 85, 2
+    );
+
+    checkSDL(SDL_RenderRect(renderer, &kBriefCloseButton));
+
+    drawText(renderer, 949, 570, "CLOSE [I]" );
+}
 
 
 
@@ -601,8 +900,25 @@ void Game::drawPuzzlePreview() {
     // Objective panel
     // ------------------------------
     drawText(renderer, 60, 130, "OBJECTIVE");
-    drawText(renderer, 60, 175, level.objective);
-    drawText(renderer, 60, 200, level.hint);
+    
+    drawWrappedText(
+        renderer, 60, 164,
+        level.objective, 31, 2
+    );
+
+    drawWrappedText(
+        renderer, 60, 207,
+        level.hint, 31, 2
+    );
+
+    checkSDL(SDL_RenderRect(renderer, &kBriefButton));
+
+    drawText(
+        renderer,
+        70,
+        245,
+        "I: VIEW FULL BRIEFING"
+    );
 
     drawText(renderer, 60, 270, "TARGET TRUTH TABLE");
 
@@ -746,7 +1062,7 @@ void Game::drawPuzzlePreview() {
         const SDL_FPoint position = sourcePosition(level, name);
 
         drawText(renderer, 390.0f, position.y - 5.0f, name);
-
+        /*/
         // Mark the terminal where the signal begins.
         const SDL_FRect terminal{
             position.x - 3.0f,
@@ -756,62 +1072,56 @@ void Game::drawPuzzlePreview() {
         };
 
         checkSDL(SDL_RenderFillRect(renderer, &terminal));
+        */
     }
     // ------------------------------
 
  
     // Draw circuit connections
     // ------------------------------
-    checkSDL(SDL_SetRenderDrawColor(
-        renderer, 75, 140, 95, 255
-    ));
+    checkSDL(SDL_SetRenderDrawColor(renderer, 75, 140, 95, 255));
 
     for (const auto& socket : level.sockets) {
-        for (std::size_t i = 0; i < socket.sources.size(); ++i) {
-            const SDL_FPoint from = sourcePosition(level, socket.sources[i]);
+        // Draw connections originating from external inputs.
+        for (std::size_t i = 0; i < level.inputCount; ++i) {
+            const std::string source(
+                1,
+                static_cast<char>('A' + i)
+            );
 
-            const SDL_FPoint to = inputPinPosition(socket, i);
-
-            // Keep final vertical section just before destination socket.
-            // Separate two-input connections into slightly different lanes to improve readability.
-            const float pinOffset = socket.sources.size() == 2 ? (i == 0 ? 32.0f : 45.0f) : 18.0f;
-
-            const float proposedBendX = to.x - pinOffset;
-
-            // Allow for sockets positioned close together.
-            const float bendX = proposedBendX > from.x ? proposedBendX : (from.x + to.x) * 0.5f;
-
-            // Segment 1: horizontal from source.
-            checkSDL(SDL_RenderLine(
+            drawSignalConnections(
                 renderer,
-                from.x, from.y,
-                bendX, from.y
-            ));
-
-            // Segment 2: vertical towards input pin.
-            checkSDL(SDL_RenderLine(
-                renderer,
-                bendX, from.y,
-                bendX, to.y
-            ));
-
-            // Segment 3: horizontal into socket.
-            checkSDL(SDL_RenderLine(
-                renderer,
-                bendX, to.y,
-                to.x, to.y
-            ));
-
-            // Mark actual destination pin.
-            const SDL_FRect pinMarker{
-                to.x - 2.0f,
-                to.y - 2.0f,
-                4.0f,
-                4.0f
-            };
-
-            checkSDL(SDL_RenderFillRect(renderer, &pinMarker));
+                level,
+                source,
+                i
+            );
         }
+
+        // Draw connections originating from gate outputs.
+        for (std::size_t i = 0; i < level.sockets.size(); ++i) {
+            drawSignalConnections(
+                renderer,
+                level,
+                level.sockets[i].id,
+                level.inputCount + i
+            );
+        }
+    }
+
+    // Redraw external input terminals after wires so the square appears on top of the line.
+    for (std::size_t i = 0; i < level.inputCount; ++i) {
+        const std::string name(1, static_cast<char>('A' + i));
+
+        const SDL_FPoint position = sourcePosition(level, name);
+
+        const SDL_FRect terminal{
+            position.x - 3.0f,
+            position.y - 3.0f,
+            6.0f,
+            6.0f
+        };
+
+        checkSDL(SDL_RenderFillRect(renderer, &terminal));
     }
 
     // Draw wire from final socket to Y.
@@ -850,20 +1160,40 @@ void Game::drawPuzzlePreview() {
         // Show currently placed component.
         const auto it = placedGates_.find(socket.id);
 
-        if (it != placedGates_.end()) {
-            drawText(
-                renderer, 
-                socket.x + 25.0f, 
-                socket.y + 24.0f, 
-                gateName(it->second)
-            );
-        }
-        else {
-            drawText(renderer, socket.x + 25.0f, socket.y + 24.0f, "EMPTY");
+        const std::string label = it != placedGates_.end() ? gateName(it->second) : "EMPTY";
+
+        // SDL_RenderDebugText uses 8x8 character cells.
+        constexpr float characterWidth = 8.0f;
+        constexpr float characterHeight = 8.0f;
+
+        const float textWidth = static_cast<float>(label.size()) * characterWidth;
+
+        drawText(
+            renderer,
+            socket.x + (kSocketWidth - textWidth) * 0.5f,
+            socket.y + (kSocketHeight - characterHeight) * 0.5f,
+            label
+        );
+    }
+
+    // Draw input pin markers over the socket borders.
+    for (const auto& socket : level.sockets) {
+        for (std::size_t pin = 0; pin < socket.sources.size(); ++pin) {
+
+            const SDL_FPoint position = inputPinPosition(socket, pin);
+
+            const SDL_FRect inputMarker{
+                position.x - 3.0f,
+                position.y - 3.0f,
+                6.0f,
+                6.0f
+            };
+
+            checkSDL(SDL_RenderFillRect(renderer, &inputMarker));
         }
     }
 
-    // Mark final output terminal matching connection markers on external inputs.
+    // Mark final output terminal, matching connection markers on external inputs.
     const SDL_FRect outputTerminal{
         902.0f,
         outputPosition.y - 3.0f,
@@ -950,6 +1280,13 @@ void Game::drawPuzzlePreview() {
     );
 
     drawText(renderer, 60, 660, "> " + statusMessage_);
+    // ------------------------------
+
+	// Briefing overlay
+    // ------------------------------
+    if (showBriefing_) {
+        drawWorkOrderBriefing();
+    }
     // ------------------------------
 }
 

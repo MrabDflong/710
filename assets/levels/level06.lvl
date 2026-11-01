@@ -1,7 +1,13 @@
 id=06
 title=EMERGENCY PRESSURE INTERLOCK
-objective=Restore the pressure override.
-hint=Sensor mismatch AND backup pressure.
+objective=Restore pressure fault detection.
+hint=Compare primary and backup signals.
+briefing=Activate Y only when the two primary sensors disagree and at least one backup pressure alarm is active. Otherwise, the override request must remain inactive.
+input_A=Primary pressure sensor 1
+input_B=Primary pressure sensor 2
+input_C=Backup pressure alarm 1
+input_D=Backup pressure alarm 2
+output_description=Pressure override request
 inputs=4
 gates=AND,OR,NOT,NAND,XOR,WIRE
 truth_table=0000011101110000

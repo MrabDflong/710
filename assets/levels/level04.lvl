@@ -1,7 +1,11 @@
 id=04
 title=SENSOR DISAGREEMENT
-objective=Detect mismatched sensor signals.
-hint=Output ON when A & B differ.
+objective=Detect inconsistent sensors.
+hint=Flag disagreement between A and B.
+briefing=Two independent monitoring channels report a binary condition. The fault indicator must activate when their readings differ and remain inactive when the readings match.
+input_A=Primary monitoring channel
+input_B=Secondary monitoring channel
+output_description=Sensor disagreement fault
 gates=AND,OR,NOT,NAND,WIRE
 truth_table=0110
 

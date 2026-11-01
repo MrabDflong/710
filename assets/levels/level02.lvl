@@ -1,7 +1,11 @@
 id=02
 title=EMERGENCY LIGHTING
 objective=Restore emergency lighting.
-hint=At least one switch must be active.
+hint=Either request can activate Y.
+briefing=Emergency lighting must switch ON whenever at least one activation request is present. It must remain OFF only when both requests are inactive.
+input_A=Manual lighting activation request
+input_B=Automatic emergency lighting request
+output_description=Emergency lighting power
 gates=AND,OR
 truth_table=0111
 

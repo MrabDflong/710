@@ -1,7 +1,14 @@
 id=07
 title=BOREHOLE SAFETY OVERRIDE
-objective=Restore the borehole safety circuit.
-hint=Normal interlock OR emergency bypass.
+objective=Restore borehole override control.
+hint=Include the manual override signal.
+briefing=Activate Y if the primary sensors disagree while at least one backup alarm is active. The manual emergency switch must also activate Y independently, regardless of all other readings.
+input_A=Primary pressure sensor 1
+input_B=Primary pressure sensor 2
+input_C=Backup pressure alarm 1
+input_D=Backup pressure alarm 2
+input_E=Manual emergency override switch
+output_description=Borehole safety override authorisation
 inputs=5
 gates=AND,OR,NOT,NAND,XOR,WIRE
 truth_table=01010101011111110111111101010101
