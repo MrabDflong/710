@@ -437,6 +437,14 @@ const Level& LevelManager::currentLevel() const {
     return levels_.at(currentIndex_);
 }
 
+const Level& LevelManager::levelAt(std::size_t index) const {
+    return levels_.at(index);
+}
+
+std::size_t LevelManager::levelCount() const noexcept {
+    return levels_.size();
+}
+
 std::size_t LevelManager::currentIndex() const noexcept {
     return currentIndex_;
 }

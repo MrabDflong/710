@@ -12,6 +12,10 @@ public:
 
     [[nodiscard]] const Level& currentLevel() const;
 
+    [[nodiscard]] const Level& levelAt(std::size_t index) const;
+
+    [[nodiscard]] std::size_t levelCount() const noexcept;
+
     [[nodiscard]] std::size_t currentIndex() const noexcept;
 
     [[nodiscard]] bool hasNextLevel() const noexcept;

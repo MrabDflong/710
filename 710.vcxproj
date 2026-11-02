@@ -180,6 +180,7 @@ xcopy /E /I /Y "$(ProjectDir)assets" "$(TargetDir)assets" &gt;nul
     <None Include="assets\levels\level07.lvl" />
     <None Include="assets\levels\level08.lvl" />
     <None Include="assets\levels\level09.lvl" />
+    <None Include="assets\levels\level10.lvl" />
     <None Include="validate_710_level.py" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

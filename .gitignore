@@ -19,5 +19,8 @@ obj/
 *.tmp
 *.bak
 
-Development helper files
+# Development helper files
 validate_710_level.py
+
+# Command:
+# py validate_710_level.py assets\levels\level<NUMBER>.lvl

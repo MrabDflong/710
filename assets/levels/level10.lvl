@@ -1,0 +1,27 @@
+id=10
+title=SINGLE-FAULT ISOLATION
+objective=Restore isolated fault detection.
+hint=Exactly one fault channel must be active.
+briefing=Three independent monitoring channels report fault conditions. Activate the isolation indicator only when exactly one channel reports a fault. If no channels report a fault or two or three channels report faults, this diagnostic indicator must stay OFF. Multi-channel incidents are handled by a separate system.
+input_A=Electrical fault detected
+input_B=Hydraulic fault detected
+input_C=Pressure fault detected
+output_description=Single-fault isolation indicator
+
+inputs=3
+gates=AND,OR,NOT,NAND,XOR,WIRE
+truth_table=01101000
+arrival_message=ISOLATION DIAGNOSTICS INITIALISED
+optimal_gates=5
+
+socket=s0,455,200,A
+socket=s1,455,285,B
+socket=s2,455,395,C
+socket=s3,570,200,s0,s1
+socket=s4,570,270,s0,s1
+socket=s5,570,340,s2
+socket=s6,570,410,s2
+socket=s7,685,215,s3,s5
+socket=s8,685,365,s4,s6
+socket=s9,790,285,s7,s8
+output=s9

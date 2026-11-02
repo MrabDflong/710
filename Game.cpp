@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <span>
 #include <sstream>
@@ -23,6 +24,49 @@ namespace {
     constexpr SDL_FRect kRunButton  { 615, 485, 160, 45 };
     constexpr SDL_FRect kResetButton{ 795, 485, 110, 45 };
     constexpr SDL_FRect kNextButton { 615, 535, 290, 34 };
+
+    constexpr std::size_t kMenuPageSize = 10;
+
+    constexpr SDL_FRect kMenuPreviousButton{455, 555, 170, 34};
+
+    constexpr SDL_FRect kMenuNextButton{655, 555, 170, 34};
+
+    constexpr SDL_FRect kMenuExitButton{520, 645, 240, 38};
+
+    constexpr SDL_FRect kSwitchSaveButton{290, 645, 200, 38};
+
+    constexpr SDL_FRect kSaveExitButton{520, 625, 240, 38};
+
+    constexpr SDL_FRect kConfirmDeleteButton{365, 450, 250, 48};
+
+    constexpr SDL_FRect kCancelDeleteButton{665, 450, 250, 48};
+
+    [[nodiscard]] SDL_FRect saveSlotRect(std::size_t slot) {
+        return {
+            145.0f,
+            190.0f + static_cast<float>(slot) * 112.0f,
+            990.0f,
+            82.0f
+        };
+    }
+
+    [[nodiscard]] SDL_FRect saveDeleteRect(std::size_t slot) {
+        return {
+            960.0f,
+            209.0f + static_cast<float>(slot) * 112.0f,
+            150.0f,
+            43.0f
+        };
+    }
+
+    [[nodiscard]] SDL_FRect menuLevelRect(std::size_t slot) {
+        return {
+            135.0f + static_cast<float>(slot % 2) * 515.0f,
+            195.0f + static_cast<float>(slot / 2) * 67.0f,
+            495.0f,
+            54.0f
+        };
+    }
     constexpr std::size_t kTruthRowsPerPage = 5;
     constexpr SDL_FRect kBriefButton{ 60.0f, 238.0f, 245.0f, 22.0f };
     constexpr SDL_FRect kBriefCloseButton{ 920.0f, 560.0f, 140.0f, 30.0f };
@@ -51,9 +95,38 @@ namespace {
             );
         }
 
-        return std::filesystem::path{ basePath }
-            / "assets"
-            / "levels";
+        return std::filesystem::path{ basePath } / "assets"/ "levels";
+    }
+
+    [[nodiscard]] std::filesystem::path getSavePath(
+        std::size_t slot
+    ) {
+        static const std::filesystem::path directory = [] {
+            char* basePath = SDL_GetPrefPath("710_Project", "710");
+
+            if (!basePath) {
+                throw std::runtime_error(
+                    std::string{ "Unable to find save directory: " } +
+                    SDL_GetError()
+                );
+            }
+
+            // SDL returns a UTF-8 path. Convert it to C++20 UTF-8 string before constructing filesystem path.
+            const std::string pathText{ basePath };
+
+            const std::u8string utf8Path{
+                pathText.begin(),
+                pathText.end()
+            };
+
+            const std::filesystem::path result{ utf8Path };
+
+            SDL_free(basePath);
+
+            return result;
+            }();
+
+        return directory / ("slot" + std::to_string(slot + 1) + ".sav");
     }
 
     [[nodiscard]] bool containsPoint(const SDL_FRect& rect, float x, float y) {
@@ -386,7 +459,232 @@ Game::Game() : levelManager_{getLevelDirectory() } {
 
 }
 
-void Game::run() {
+
+bool Game::loadProgress() {
+    if (!activeSaveSlot_) {
+        return false;
+    }
+
+    std::ifstream file{ getSavePath(*activeSaveSlot_) };
+
+    if (!file.is_open()) {
+        return false;
+    }
+
+    std::size_t completed{};
+
+    if (!(file >> completed) || completed > levelManager_.levelCount()) {
+        return false;
+    }
+
+    std::unordered_set<std::string> merits;
+
+    std::string record;
+    std::string id;
+
+    while (file >> record) {
+        if (record != "MERIT" || !(file >> id)) {
+            return false;
+        }
+
+        // Only accept Merit records for completed levels.
+        bool validId = false;
+
+        for (std::size_t i = 0; i < completed; ++i) {
+            if (levelManager_.levelAt(i).id == id) {
+                validId = true;
+                break;
+            }
+        }
+
+        if (!validId) {
+            return false;
+        }
+
+        merits.insert(id);
+    }
+
+    if (!file.eof()) {
+        return false;
+    }
+
+    // Apply progress only after validating entire file.
+    completedLevelCount_ = completed;
+    engineeringMerits_ = std::move(merits);
+
+    return true;
+}
+
+bool Game::saveProgress() const {
+    if (!activeSaveSlot_) {
+        return false;
+    }
+
+    std::ofstream file{getSavePath(*activeSaveSlot_), std::ios::trunc};
+
+    if (!file.is_open()) {
+        return false;
+    }
+
+    file << completedLevelCount_ << '\n';
+
+    for (const auto& id : engineeringMerits_) {
+        file << "MERIT " << id << '\n';
+    }
+
+    file.flush();
+
+    return static_cast<bool>(file);
+}
+
+
+void Game::selectSaveSlot(std::size_t slot) {
+    if (slot >= kSaveSlotCount) {
+        return;
+    }
+
+    std::error_code error;
+    const bool exists = std::filesystem::exists(getSavePath(slot), error);
+
+    if (error) {
+        saveScreenMessage_ = "ERROR: CANNOT ACCESS SAVE FILE";
+        return;
+    }
+
+    activeSaveSlot_ = slot;
+
+    completedLevelCount_ = 0;
+    engineeringMerits_.clear();
+
+    if (exists) {
+        if (!loadProgress()) {
+            activeSaveSlot_.reset();
+            saveScreenMessage_ = "ERROR: SAVE FILE IS UNREADABLE";
+            return;
+        }
+    }
+    else {
+        // Create empty save immediately.
+        if (!saveProgress()) {
+            activeSaveSlot_.reset();
+            saveScreenMessage_ = "ERROR: CANNOT CREATE SAVE FILE";
+            return;
+        }
+    }
+
+    // Never transfer puzzle or log state between saves.
+    selectedGate_.reset();
+    placedGates_.clear();
+
+    systemLog_.clear();
+    logFirstVisible_ = 0;
+
+    truthTablePage_ = 0;
+    showBriefing_ = false;
+    debugLevelOverride_ = false;
+
+    verificationStatus_ = VerificationStatus::Untested;
+
+    menuPage_ = 0;
+    menuMessage_ = "SELECT AN AUTHORISED WORK ORDER";
+
+    screen_ = Screen::MainMenu;
+
+    logEvent("SAVE " + std::to_string(slot + 1) + " LOADED");
+}
+
+
+
+void Game::handleSaveSelectClick(float x, float y) {
+
+    for (std::size_t i = 0; i < kSaveSlotCount; ++i) {
+        std::error_code error;
+        const bool exists = std::filesystem::exists(getSavePath(i), error);
+
+        if (error) {
+            saveScreenMessage_ = "ERROR: CANNOT ACCESS SAVE SLOT";
+            return;
+        }
+
+        // Test DELETE before the larger slot rectangle
+        // because the delete button sits inside it.
+        if (containsPoint(saveDeleteRect(i), x, y)) {
+            if (exists) {
+                pendingDeleteSlot_ = i;
+                screen_ = Screen::DeleteConfirmation;
+            }
+            return;
+        }
+
+        if (containsPoint(saveSlotRect(i), x, y)) {
+            selectSaveSlot(i);
+            return;
+        }
+    }
+
+    if (containsPoint(kSaveExitButton, x, y)) {
+        running_ = false;
+    }
+}
+
+void Game::handleDeleteConfirmationClick(float x, float y) {
+
+    if (containsPoint(kCancelDeleteButton, x, y)) {
+        pendingDeleteSlot_.reset();
+        screen_ = Screen::SaveSelect;
+        return;
+    }
+
+    if (!containsPoint(kConfirmDeleteButton, x, y) || !pendingDeleteSlot_) {
+        return;
+    }
+
+    const std::size_t slot = *pendingDeleteSlot_;
+
+    std::error_code error;
+    const bool removed = std::filesystem::remove(getSavePath(slot), error);
+
+    pendingDeleteSlot_.reset();
+    screen_ = Screen::SaveSelect;
+
+    if (error) {
+        saveScreenMessage_ = "ERROR: COULD NOT DELETE SAVE FILE";
+    }
+    else if (removed) {
+        saveScreenMessage_ = "SAVE 0" + std::to_string(slot + 1) + " DELETED";
+    }
+    else {
+        saveScreenMessage_ = "SAVE FILE NOT FOUND";
+    }
+}
+
+
+
+void Game::logEvent(std::string message) {
+    if (message.empty()) {
+        return;
+    }
+
+    systemLog_.push_back(std::move(message));
+
+    // Keep a bounded history.
+    constexpr std::size_t kMaximumEntries = 100;
+    constexpr std::size_t kVisibleEntries = 3;
+
+    if (systemLog_.size() > kMaximumEntries) {
+        systemLog_.erase(systemLog_.begin());
+    }
+
+    // Automatically show newest messages.
+    logFirstVisible_ = systemLog_.size() > kVisibleEntries ? systemLog_.size() - kVisibleEntries : 0;
+}
+
+void Game::setStatus(std::string message) {
+    statusMessage_ = std::move(message);
+    logEvent(statusMessage_);
+}
+
+void Game::run() { 
     while (running_) {
         handleEvents();
 
@@ -408,23 +706,65 @@ void Game::handleEvents() {
             running_ = false;
         }
         else if (
-            event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
-            (event.button.button == SDL_BUTTON_LEFT || event.button.button == SDL_BUTTON_RIGHT)) {
+            event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && (event.button.button == SDL_BUTTON_LEFT || event.button.button == SDL_BUTTON_RIGHT)) {
+
             checkSDL(SDL_ConvertEventToRenderCoordinates(renderer_.get(), &event));
 
             const bool removeGate = event.button.button == SDL_BUTTON_RIGHT;
 
-            handleMouseClick(
-                event.button.x,
-                event.button.y,
-                removeGate
-            );
+            if (screen_ == Screen::SaveSelect) {
+                if (!removeGate) {
+                    handleSaveSelectClick(event.button.x, event.button.y);
+                }
+                continue;
+            }
+
+            if (screen_ == Screen::DeleteConfirmation) {
+                if (!removeGate) {
+                    handleDeleteConfirmationClick(event.button.x, event.button.y);
+                }
+                continue;
+            }
+
+            if (screen_ == Screen::MainMenu) {
+                if (!removeGate) {
+                    handleMenuClick(event.button.x, event.button.y);
+                }
+                continue;
+            }
+
+            handleMouseClick(event.button.x, event.button.y, removeGate);
         }
         else if (event.type == SDL_EVENT_KEY_DOWN) {
+            if (event.key.scancode == SDL_SCANCODE_ESCAPE && !event.key.repeat) {
+
+                if (screen_ == Screen::DeleteConfirmation) {
+                    pendingDeleteSlot_.reset();
+                    screen_ = Screen::SaveSelect;
+                }
+                else if (screen_ == Screen::MainMenu) {
+                    activeSaveSlot_.reset();
+                    screen_ = Screen::SaveSelect;
+                }
+                else if (screen_ == Screen::Puzzle) {
+                    if (showBriefing_) {
+                        showBriefing_ = false;
+                    }
+                    else {
+                        screen_ = Screen::MainMenu;
+                        menuMessage_ = "WORK ORDER CLOSED - SELECT TO RESTART";
+                    }
+                }
+                else if (screen_ == Screen::SaveSelect) {
+                    running_ = false;
+                }
+
+                continue;
+            }
 
 #ifndef NDEBUG
             // Debug-only level navigation.
-            if (!event.key.repeat) {
+            if (screen_ == Screen::Puzzle && !event.key.repeat) {
                 const SDL_Scancode key = event.key.scancode;
 
                 const std::size_t current = levelManager_.currentIndex();
@@ -455,27 +795,45 @@ void Game::handleEvents() {
                     skipRequested = true;
                 }
 
-                if (skipRequested && levelManager_.goToLevel(target)) {
+                if (skipRequested && target < levelManager_.levelCount()) {
 
-                    // Clear previous level's state.
-                    selectedGate_.reset();
-                    placedGates_.clear();
-
-                    truthTablePage_ = 0;
-                    showBriefing_ = false;
-
-                    verificationStatus_ =
-                        VerificationStatus::Untested;
-
-                    statusMessage_ = "DEBUG: WORK ORDER " + levelManager_.currentLevel().id + " LOADED";
+                    openWorkOrder(target, true);
+                    setStatus("DEBUG: WORK ORDER " + levelManager_.currentLevel().id + " LOADED");
 
                     continue;
                 }
             }
 #endif
+            if (screen_ != Screen::Puzzle) {
+                continue;
+            }
 
-            if (event.key.scancode == SDL_SCANCODE_I &&
-                !event.key.repeat) {
+            
+            // Menu keyboard events must not change puzzle UI state.
+            if (screen_ == Screen::MainMenu) {
+                continue;
+            }
+
+            // Browse older system-log entries using "[" & "]".
+            if (!showBriefing_ && event.key.scancode == SDL_SCANCODE_LEFTBRACKET) {
+
+                if (logFirstVisible_ > 0) {
+                    --logFirstVisible_;
+                }
+
+                continue;
+            }
+
+            if (!showBriefing_ && event.key.scancode == SDL_SCANCODE_RIGHTBRACKET) {
+
+                if (logFirstVisible_ + 3 < systemLog_.size()) {
+                    ++logFirstVisible_;
+                }
+
+                continue;
+            }
+
+            if (event.key.scancode == SDL_SCANCODE_I && !event.key.repeat) {
 
                 showBriefing_ = !showBriefing_;
                 continue;
@@ -491,17 +849,14 @@ void Game::handleEvents() {
 
             const Level& level = levelManager_.currentLevel();
 
-            const std::size_t pageCount =
-                (level.expectedOutputs.size() + kTruthRowsPerPage - 1) / kTruthRowsPerPage;
+            const std::size_t pageCount = (level.expectedOutputs.size() + kTruthRowsPerPage - 1) / kTruthRowsPerPage;
 
             if (event.key.scancode == SDL_SCANCODE_PAGEUP) {
                 if (truthTablePage_ > 0) {
                     --truthTablePage_;
                 }
             }
-            else if (
-                event.key.scancode == SDL_SCANCODE_PAGEDOWN
-                ) {
+            else if ( event.key.scancode == SDL_SCANCODE_PAGEDOWN) {
                 if (truthTablePage_ + 1 < pageCount) {
                     ++truthTablePage_;
                 }
@@ -512,30 +867,28 @@ void Game::handleEvents() {
 
 
 
-void Game::handleMouseClick( float x, float y, bool removeGate) {
-    
-    
+
+void Game::handleMouseClick(float x, float y, bool removeGate) {
     const Level& level = levelManager_.currentLevel();
 
-    // Prevent interactions with circuit while briefing is open.
+
+    // Briefing controls
+    // ------------------------------
     if (showBriefing_) {
         if (!removeGate && containsPoint(kBriefCloseButton, x, y)) {
-
             showBriefing_ = false;
         }
-
         return;
     }
 
-    // Open briefing from objective panel.
     if (!removeGate && containsPoint(kBriefButton, x, y)) {
-
         showBriefing_ = true;
         return;
     }
+    // ------------------------------
 
 
-    // Right click removes a gate.
+    // Right-click: remove a gate
     // ------------------------------
     if (removeGate) {
         for (const auto& socket : level.sockets) {
@@ -546,7 +899,7 @@ void Game::handleMouseClick( float x, float y, bool removeGate) {
             if (placedGates_.erase(socket.id) > 0) {
                 verificationStatus_ = VerificationStatus::Untested;
 
-                statusMessage_ = "SOCKET " + socket.id + " CLEARED";
+                setStatus("SOCKET " + socket.id + " CLEARED");
             }
 
             return;
@@ -557,23 +910,24 @@ void Game::handleMouseClick( float x, float y, bool removeGate) {
     // ------------------------------
 
 
-    // Select an available gate.
+    // Select a component
     // ------------------------------
     for (std::size_t i = 0; i < level.availableGates.size(); ++i) {
+
         const GateType type = level.availableGates[i];
 
         if (containsPoint(gateButtonRect(i), x, y)) {
             selectedGate_ = type;
 
-            statusMessage_ = gateName(type) + " SELECTED - CLICK A SOCKET";
+            setStatus(gateName(type) + " SELECTED - CLICK A SOCKET");
 
             return;
         }
     }
     // ------------------------------
 
-    
-    // Place or replace a gate.
+
+    // Place or replace a component
     // ------------------------------
     for (const auto& socket : level.sockets) {
         if (!containsPoint(socketRect(socket), x, y)) {
@@ -581,30 +935,29 @@ void Game::handleMouseClick( float x, float y, bool removeGate) {
         }
 
         if (!selectedGate_.has_value()) {
-            statusMessage_ = "SELECT A GATE FIRST";
+            setStatus("SELECT A GATE FIRST");
             return;
         }
 
         const LogicGate gate{ *selectedGate_ };
 
-        // AND/OR require two pins. NOT requires one.
         if (gate.inputCount() != socket.sources.size()) {
-            statusMessage_ = "ERROR 422: INCOMPATIBLE SOCKET";
+            setStatus("ERROR 422: INCOMPATIBLE SOCKET");
             return;
         }
 
-        placedGates_.insert_or_assign( socket.id, *selectedGate_);
+        placedGates_.insert_or_assign(socket.id, *selectedGate_);
 
         verificationStatus_ = VerificationStatus::Untested;
 
-        statusMessage_ = gateName(*selectedGate_) + " PLACED IN " + socket.id;
+        setStatus(gateName(*selectedGate_) + " PLACED IN " + socket.id);
 
         return;
     }
     // ------------------------------
 
     
-    // Run circuit verification.
+    // Verification
     // ------------------------------
     if (containsPoint(kRunButton, x, y)) {
         runPuzzleTests();
@@ -612,49 +965,41 @@ void Game::handleMouseClick( float x, float y, bool removeGate) {
     }
     // ------------------------------
 
-
-    // Reset all placed gates.
+  
+    // Reset
     // ------------------------------
     if (containsPoint(kResetButton, x, y)) {
         selectedGate_.reset();
         placedGates_.clear();
 
-        verificationStatus_ = VerificationStatus::Untested;
+        verificationStatus_ =
+            VerificationStatus::Untested;
 
-        statusMessage_ = "CIRCUIT RESET";
+        setStatus("CIRCUIT RESET");
         return;
     }
     // ------------------------------
 
-
-    // Progress to next work order.
+    
+    // Next work order / return to menu
     // ------------------------------
     if (containsPoint(kNextButton, x, y) &&
-        verificationStatus_ == VerificationStatus::Passed &&
-        levelManager_.hasNextLevel()) {
+        verificationStatus_ == VerificationStatus::Passed) {
 
-        levelManager_.nextLevel();
-
-        selectedGate_.reset();
-        placedGates_.clear();
-        truthTablePage_ = 0;
-
-
-        verificationStatus_ = VerificationStatus::Untested;
-
-        const Level& nextLevel = levelManager_.currentLevel();
-
-        if (!nextLevel.arrivalMessage.empty()) {
-            statusMessage_ = nextLevel.arrivalMessage;
+        if (levelManager_.hasNextLevel()) {
+            openWorkOrder(levelManager_.currentIndex() + 1, debugLevelOverride_);
         }
         else {
-            statusMessage_ = "NEW WORK ORDER LOADED";
+            screen_ = Screen::MainMenu;
+
+            menuMessage_ = completedLevelCount_ == levelManager_.levelCount() ? "ALL WORK ORDERS VERIFIED" : "RETURNED FROM DEBUG WORK ORDER";
         }
 
         return;
     }
     // ------------------------------
 }
+
 
 
 
@@ -670,6 +1015,8 @@ void Game::runPuzzleTests() {
             verificationStatus_ = VerificationStatus::Failed;
 
             statusMessage_ ="ERROR 404: SOCKET " + socket.id + " IS EMPTY";
+
+            logEvent(statusMessage_);
 
             return;
         }
@@ -752,10 +1099,10 @@ void Game::runPuzzleTests() {
 
     // Report result
     // ------------------------------
+
     if (failedTests == 0) {
         verificationStatus_ = VerificationStatus::Passed;
 
-        // Count every placed component except WIRE.
         const auto gateCount = static_cast<std::size_t>(
             std::count_if(
                 placedGates_.begin(),
@@ -766,32 +1113,55 @@ void Game::runPuzzleTests() {
             )
         );
 
-        // Optional engineering merit is awarded only when circuit works correctly.
-        if (level.optimalGateCount.has_value() &&
-            gateCount <= *level.optimalGateCount) {
+        bool progressChanged = false;
 
-            engineeringMerits_.insert(level.id);
+        // Debug level shortcuts must never alter saved progress.
+        if (!debugLevelOverride_) {
+            // Engineering Merit is awarded independently from ordinary work-order completion.
+            if (level.optimalGateCount.has_value() &&
+                gateCount <= *level.optimalGateCount) {
+
+                if (engineeringMerits_.insert(level.id).second) {
+                    logEvent(
+                        "ENGINEERING MERIT AWARDED - WORK ORDER " +
+                        level.id
+                    );
+
+                    progressChanged = true;
+                }
+            }
+
+            // Advance highest consecutively completed level.
+            if (levelManager_.currentIndex() ==
+                completedLevelCount_) {
+
+                ++completedLevelCount_;
+                progressChanged = true;
+
+                logEvent("WORK ORDER " + level.id + " VERIFIED");
+            }
+
+            if (progressChanged && !saveProgress()) {
+                logEvent("ERROR: PROGRESS COULD NOT BE SAVED");
+            }
         }
 
-        // Report component certification if applicable.
         if (level.certifies.has_value()) {
-            statusMessage_ =
-                "710 VERIFIED - " +
-                gateName(*level.certifies) +
-                " CERTIFIED";
+            statusMessage_ = "710 VERIFIED - " + gateName(*level.certifies) + " CERTIFIED";
         }
         else {
-            statusMessage_ =
-                "710 VERIFIED - ALL " + std::to_string(level.expectedOutputs.size()) + " TESTS PASSED";
+            statusMessage_ = "710 VERIFIED - ALL " + std::to_string(level.expectedOutputs.size()) + " TESTS PASSED";
         }
     }
     else {
         verificationStatus_ = VerificationStatus::Failed;
 
-        statusMessage_ =
-            "ERROR 409: " + std::to_string(failedTests) + " OF " +
-            std::to_string(level.expectedOutputs.size()) + " TESTS FAILED";
+        statusMessage_ = "ERROR 409: " + std::to_string(failedTests) + " OF " + std::to_string(level.expectedOutputs.size()) + " TESTS FAILED";
     }
+
+    // Record either successful or failed verification.
+    logEvent(statusMessage_);
+
     // ------------------------------
 }
     
@@ -857,6 +1227,279 @@ void Game::drawWorkOrderBriefing() {
     drawText(renderer, 949, 570, "CLOSE [I]" );
 }
 
+
+
+void Game::drawSaveSelect() {
+    SDL_Renderer* renderer = renderer_.get();
+
+    checkSDL(SDL_SetRenderDrawColor(renderer, 115, 220, 145, 255));
+
+    drawText(renderer, 145, 85, "710 // PERSONNEL DATA TERMINAL");
+
+    drawText(renderer, 145, 120, "SELECT SAVE FILE");
+
+    drawText(renderer, 145, 148, "SELECT AN EMPTY SLOT TO BEGIN A NEW ASSIGNMENT");
+
+    for (std::size_t i = 0; i < kSaveSlotCount; ++i) {
+        const SDL_FRect row = saveSlotRect(i);
+
+        std::string status = "EMPTY SLOT";
+
+        std::error_code error;
+        const bool exists = std::filesystem::exists(getSavePath(i), error);
+
+        if (error) {
+            status = "SAVE UNAVAILABLE";
+        }
+        else if (exists) {
+            std::ifstream file{ getSavePath(i) };
+            std::size_t verified{};
+
+            if (file >> verified && verified <= levelManager_.levelCount()) {
+
+                status = std::to_string(verified) + " WORK ORDERS VERIFIED";
+            }
+            else {
+                status = "UNREADABLE SAVE";
+            }
+        }
+
+        checkSDL(SDL_RenderRect(renderer, &row));
+
+        drawText(
+            renderer,
+            row.x + 15,
+            row.y + 17,
+            "SAVE 0" + std::to_string(i + 1)
+        );
+
+        drawText(
+            renderer,
+            row.x + 15,
+            row.y + 47,
+            status
+        );
+
+        drawText(
+            renderer,
+            row.x + 650,
+            row.y + 34,
+            exists ? "LOAD" : "CREATE"
+        );
+
+        if (exists) {
+            const SDL_FRect deleteButton = saveDeleteRect(i);
+
+            checkSDL(SDL_RenderRect(renderer, &deleteButton));
+
+            drawText(renderer, deleteButton.x + 46, deleteButton.y + 17, "DELETE");
+        }
+    }
+
+    drawText(renderer, 145, 585, saveScreenMessage_);
+
+    checkSDL(SDL_RenderRect(renderer, &kSaveExitButton));
+
+    drawText(renderer, 620, 638, "EXIT");
+}
+
+void Game::drawDeleteConfirmation() {
+    SDL_Renderer* renderer = renderer_.get();
+
+    checkSDL(SDL_SetRenderDrawColor(renderer, 115, 220, 145, 255));
+
+    drawText(renderer, 275, 160, "710 // FILE MANAGEMENT");
+
+    drawText(renderer, 275, 215, "CONFIRM SAVE DELETION");
+
+    if (pendingDeleteSlot_) {
+        drawText(renderer, 275, 280, "DELETE SAVE 0" + std::to_string(*pendingDeleteSlot_ + 1) + "?");
+    }
+
+    drawText(renderer, 275, 320, "ALL PROGRESS AND ENGINEERING MERITS");
+
+    drawText(renderer, 275, 340, "IN THIS SLOT WILL BE LOST.");
+
+    checkSDL(SDL_RenderRect(renderer, &kConfirmDeleteButton));
+
+    checkSDL(SDL_RenderRect(renderer, &kCancelDeleteButton));
+
+    drawText(renderer, 430, 470, "DELETE SAVE");
+    drawText(renderer, 755, 470, "CANCEL");
+}
+
+
+
+void Game::drawMainMenu() {
+    SDL_Renderer* renderer = renderer_.get();
+
+    checkSDL(SDL_SetRenderDrawColor(renderer, 115, 220, 145, 255));
+
+    drawText(renderer, 135, 65, "710 // OFFSHORE MAINTENANCE TERMINAL");
+    drawText(renderer, 135, 100, "WORK ORDER DIRECTORY");
+    drawText(renderer, 135, 130, "PERSONNEL: APPRENTICE ENGINEER");
+
+    drawText(
+        renderer,
+        135,
+        156,
+        "WORK ORDERS VERIFIED: " +
+        std::to_string(completedLevelCount_)
+    );
+
+    // Show completed work orders and one newly authorised work order.
+    const std::size_t visibleLevelCount = std::min(completedLevelCount_ + 1, levelManager_.levelCount());
+
+    const std::size_t firstLevel = menuPage_ * kMenuPageSize;
+
+    const std::size_t lastLevel = std::min(firstLevel + kMenuPageSize, visibleLevelCount);
+
+    for (std::size_t i = firstLevel; i < lastLevel; ++i) {
+        const std::size_t slot = i - firstLevel;
+        const SDL_FRect rect = menuLevelRect(slot);
+
+        const Level& level = levelManager_.levelAt(i);
+
+        const bool completed = i < completedLevelCount_;
+
+        checkSDL(SDL_SetRenderDrawColor(renderer, 15, 45, 27, 255));
+
+        checkSDL(SDL_RenderFillRect(renderer, &rect));
+
+        checkSDL(SDL_SetRenderDrawColor(renderer, 115, 220, 145, 255));
+
+        checkSDL(SDL_RenderRect(renderer, &rect));
+
+        drawText(
+            renderer,
+            rect.x + 12,
+            rect.y + 9,
+            "[" + level.id + "] " + level.title
+        );
+
+        std::string state = completed ? "710 VERIFIED" : "AUTHORISED";
+
+        if (engineeringMerits_.contains(level.id)) {
+            state += " / ENGINEERING MERIT";
+        }
+
+        drawText(renderer, rect.x + 12, rect.y + 31, state);
+    }
+
+    checkSDL(SDL_SetRenderDrawColor(renderer, 115, 220, 145, 255));
+
+    checkSDL(SDL_RenderRect(renderer,&kMenuPreviousButton));
+
+    checkSDL(SDL_RenderRect(renderer, &kMenuNextButton));
+
+    drawText(renderer, 475, 568, "PREVIOUS PAGE");
+    drawText(renderer, 690, 568, "NEXT PAGE");
+
+    drawText(renderer, 135, 610, menuMessage_);
+
+    checkSDL(SDL_RenderRect(renderer, &kSwitchSaveButton));
+
+    drawText(renderer, 340, 658, "CHANGE SAVE");
+
+    checkSDL(SDL_RenderRect(renderer, &kMenuExitButton));
+
+    drawText(renderer, 615, 658, "EXIT");
+
+    if (completedLevelCount_ == levelManager_.levelCount()) {
+        drawText(
+            renderer,
+            135,
+            175,
+            "ALL WORK ORDERS VERIFIED"
+        );
+    }
+}
+
+
+void Game::openWorkOrder(
+    std::size_t index,
+    bool debugAccess
+) {
+    // Ordinary gameplay cannot open locked levels.
+    if (!debugAccess && index > completedLevelCount_) {
+        menuMessage_ = "ERROR 403: PREVIOUS WORK ORDER NOT VERIFIED";
+        return;
+    }
+
+    if (!levelManager_.goToLevel(index)) {
+        return;
+    }
+
+    screen_ = Screen::Puzzle;
+    debugLevelOverride_ = debugAccess;
+
+    selectedGate_.reset();
+    placedGates_.clear();
+
+    truthTablePage_ = 0;
+    showBriefing_ = false;
+
+    verificationStatus_ = VerificationStatus::Untested;
+
+    const Level& level = levelManager_.currentLevel();
+
+    logEvent("WORK ORDER " + level.id + " LOADED");
+
+    if (!level.arrivalMessage.empty()) {
+        setStatus(level.arrivalMessage);
+    }
+    else {
+        setStatus("AWAITING COMPONENT PLACEMENT");
+    }
+}
+
+void Game::handleMenuClick(float x, float y) {
+    const std::size_t visibleLevelCount = std::min(completedLevelCount_ + 1, levelManager_.levelCount());
+
+    const std::size_t firstLevel = menuPage_ * kMenuPageSize;
+
+    for (std::size_t slot = 0; slot < kMenuPageSize; ++slot) {
+
+        const std::size_t index = firstLevel + slot;
+
+        if (index >= visibleLevelCount) {
+            break;
+        }
+
+        if (containsPoint(menuLevelRect(slot), x, y)) {
+            openWorkOrder(index);
+            return;
+        }
+    }
+
+    if (containsPoint(kMenuPreviousButton, x, y)) {
+        if (menuPage_ > 0) {
+            --menuPage_;
+        }
+        return;
+    }
+
+    if (containsPoint(kMenuNextButton, x, y)) {
+        if ((menuPage_ + 1) * kMenuPageSize < visibleLevelCount) {
+
+            ++menuPage_;
+        }
+        return;
+    }
+
+    if (containsPoint(kSwitchSaveButton, x, y)) {
+        activeSaveSlot_.reset();
+
+        screen_ = Screen::SaveSelect;
+        saveScreenMessage_ = "SELECT A SAVE FILE";
+
+        return;
+    }
+
+    if (containsPoint(kMenuExitButton, x, y)) {
+        running_ = false;
+    }
+}
 
 
 void Game::drawPuzzlePreview() {
@@ -1216,12 +1859,13 @@ void Game::drawPuzzlePreview() {
     drawText(renderer, 817, 504, "RESET");
 
     if (verificationStatus_ == VerificationStatus::Passed) {
+        checkSDL(SDL_RenderRect(renderer, &kNextButton));
+
         if (levelManager_.hasNextLevel()) {
-            checkSDL(SDL_RenderRect(renderer, &kNextButton));
             drawText(renderer, 640, 548, "NEXT WORK ORDER");
         }
         else {
-            drawText(renderer, 615, 548, "ALL WORK ORDERS COMPLETE");
+            drawText(renderer, 640, 548, "RETURN TO MENU");
         }
     }
     // ------------------------------
@@ -1270,20 +1914,24 @@ void Game::drawPuzzlePreview() {
     
     // System log
     // ------------------------------
-    drawText(renderer, 60, 610, "SYSTEM LOG");
+    drawText(renderer, 60, 610, "SYSTEM LOG   [ PREVIOUS / ] NEXT");
 
-    drawText(
-        renderer,
-        60,
-        640,
-        "> WORK ORDER " + level.id + " LOADED"
-    );
+    const std::size_t lastEntry = std::min(logFirstVisible_ + 3, systemLog_.size());
 
-    drawText(renderer, 60, 660, "> " + statusMessage_);
-    // ------------------------------
+    for (std::size_t i = logFirstVisible_; i < lastEntry; ++i) {
 
-	// Briefing overlay
-    // ------------------------------
+        std::string line = "> " + systemLog_[i];
+
+        // Prevent long messages overflowing the log panel.
+        if (line.size() > 140) {
+            line.resize(137);
+            line += "...";
+        }
+
+        drawText(renderer, 60, 633.0f + static_cast<float>(i - logFirstVisible_) * 18.0f, line);
+    }
+
+    // Draw briefing on top of interface.
     if (showBriefing_) {
         drawWorkOrderBriefing();
     }
@@ -1296,15 +1944,24 @@ void Game::render() {
     SDL_Renderer* renderer = renderer_.get();
 
     // Set background colour.
-    checkSDL(SDL_SetRenderDrawColor(
-        renderer, 8, 18, 12, 255
-    ));
+    checkSDL(SDL_SetRenderDrawColor(renderer, 8, 18, 12, 255));
 
     // Clear previous frame.
     checkSDL(SDL_RenderClear(renderer));
-
+    
     // Draw puzzle interface.
-    drawPuzzlePreview();
+    if (screen_ == Screen::SaveSelect) {
+        drawSaveSelect();
+    }
+    else if (screen_ == Screen::DeleteConfirmation) {
+        drawDeleteConfirmation();
+    }
+    else if (screen_ == Screen::MainMenu) {
+        drawMainMenu();
+    }
+    else {
+        drawPuzzlePreview();
+    }
 
     // Present finished frame.
     checkSDL(SDL_RenderPresent(renderer));
