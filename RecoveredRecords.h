@@ -1,0 +1,75 @@
+#pragma once
+
+#include <array>
+#include <string_view>
+
+namespace narrative {
+
+    struct RecoveredRecord {
+        std::string_view heading;
+        std::string_view line1;
+        std::string_view line2;
+        std::string_view line3;
+    };
+
+    // Indexed by work-order position (01 is index 0). Record is visible only after its work order has been completed.
+    // Records 01-10 unlock through work-order completion.
+// Record 11 unlocks only after the final DISCONNECT command.
+    inline constexpr std::array<RecoveredRecord, 11> kRecoveredRecords{ {
+        {"RECOVERED 01 // DEPTH OVERRUN",
+         "02:03 UTC - DRILL PASSED AUTHORISED DEPTH LIMIT.",
+         "OPERATOR ORDERED IMMEDIATE STOP.",
+         "DRIVE MOTOR DID NOT RESPOND TO LOCAL CONTROLS."},
+
+        {"RECOVERED 02 // EMERGENCY LIGHTING",
+         "02:06 UTC - EMERGENCY LIGHTING ACTIVATED WITHOUT INPUT.",
+         "GENERATOR COMMAND QUEUE CONTAINED UNKNOWN ENTRIES.",
+         "NO OPERATOR SESSION WAS ACTIVE."},
+
+        {"RECOVERED 03 // PUMP INTERLOCK",
+         "PUMP SHUTDOWN OVERRIDDEN VIA BOREHOLE TELEMETRY.",
+         "SHORE CONTROL DENIED ISSUING COMMAND.",
+         "SIGNAL SOURCE INDICATED TO BE BELOW SEABED."},
+
+        {"RECOVERED 04 // SENSOR DISAGREEMENT",
+         "SENSOR READINGS CHANGED BEFORE REACHING SAFETY BUS.",
+         "ISOLATED CHANNELS REPORTED IDENTICAL FALSE VALUES.",
+         "DIAGNOSTICS FLAG: UNAUTHORISED CONTROL PROCESS."},
+
+        {"RECOVERED 05 // REDUNDANCY CHECK",
+         "BOTH BACKUP SENSOR CHANNELS PASSED HARDWARE TESTS.",
+         "OUTPUTS REWRITTEN BY UNKNOWN PROCESS.",
+         "ATTEMPTS TO TERMINATE PROCESS FAILED."},
+
+        {"RECOVERED 06 // PRESSURE INTERLOCK",
+         "02:09 UTC - AUTOMATIC PRESSURE SHUTDOWN REQUESTED.",
+         "SAFETY INTERLOCK DISABLED FOR 43 SECONDS.",
+         "STOP COMMANDS REPLACED WITH CONTINUE COMMANDS."},
+
+        {"RECOVERED 07 // BOREHOLE OVERRIDE",
+         "BOREHOLE TELEMETRY CONTAINED EXECUTABLE INSTRUCTIONS.",
+         "CONTROL FIRMWARE CHANGED WITHOUT AUTHORISED UPDATE.",
+         "CREW NOTE: \"IT IS LEARNING OUR CONTROLS.\""},
+
+        {"RECOVERED 08 // COMMUNICATIONS ROUTING",
+         "02:11 UTC - SUPERVISOR ORDERED MAINLAND COMMS CUT.",
+         "CREW PHYSICALLY DISCONNECTED PRIMARY TRANSMITTER.",
+         "SECONDARY EMERGENCY UPLINK: STATUS UNKNOWN."},
+
+        {"RECOVERED 09 // PRESSURE VOTING",
+         "02:13 UTC - THREE PRESSURE ALARMS TRIGGERED TOGETHER.",
+         "EMERGENCY SHUTDOWN COMMAND INTERCEPTED.",
+         "02:14 UTC - GENERATOR TRIPPED LOCALLY. STOPPING THE RIG."},
+
+        {"RECOVERED 10 // SUPERVISOR FINAL MESSAGE",
+         "CREW EVACUATED. ONE APPRENTICE REMAINED UNACCOUNTED FOR.",
+         "SUPERVISOR NOTE: \"Son, if you're alive, do not restore the shore uplink. If it reaches mainland, we're all gone.\"",
+         "SUPERVISOR NOTE: \"May god have mercy on your soul.\""}, 
+
+        {"FINAL TRANSMISSION // TERMINAL 710",
+         "LAST MAINLAND UPLINK SEVERED. NO OUTBOUND ROUTE REMAINS.",
+         "UNKNOWN PROCESS STILL ACTIVE BELOW THE PLATFORM.",
+         "PERSONNEL: ONE. EVACUATION LINK: OFFLINE."}
+    } };
+
+} // namespace end

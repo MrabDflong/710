@@ -1,8 +1,10 @@
 #include "Game.h"
 #include "Circuit.h"
+#include "RecoveredRecords.h"
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -10,6 +12,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -35,11 +38,37 @@ namespace {
 
     constexpr SDL_FRect kSwitchSaveButton{290, 645, 200, 38};
 
+    constexpr SDL_FRect kRecoveredRecordsButton{785, 645, 220, 38};
+
+    constexpr SDL_FRect kRecordsPreviousButton{195, 570, 200, 40};
+
+    constexpr SDL_FRect kRecordsNextButton{425, 570, 200, 40};
+
+    constexpr SDL_FRect kRecordsBackButton{800, 570, 220, 40};
+
     constexpr SDL_FRect kSaveExitButton{520, 625, 240, 38};
 
     constexpr SDL_FRect kConfirmDeleteButton{365, 450, 250, 48};
 
     constexpr SDL_FRect kCancelDeleteButton{665, 450, 250, 48};
+
+    // Duration of final terminal animation and original 710 flicker and transition to OIL.
+    constexpr std::uint64_t kEndingRevealDurationMs = 1850;
+
+    // Flash OIL three times in 180ms intervals.
+    constexpr std::uint64_t kEndingOilFlashHalfPeriodMs = 180;
+    constexpr std::uint64_t kEndingOilFlashCount = 3;
+
+    constexpr std::uint64_t kEndingOilFlashDurationMs = kEndingOilFlashCount * 2 * kEndingOilFlashHalfPeriodMs;
+
+    // Full animation with three OIL flashes.
+    constexpr std::uint64_t kEndingCompleteDurationMs = kEndingRevealDurationMs + kEndingOilFlashDurationMs;
+
+    // Show lines one by one.
+    constexpr std::uint64_t kRecordLineIntervalMs = 1200;
+
+    // Show others.
+    constexpr std::uint64_t kRecordRevealDurationMs = 2 * kRecordLineIntervalMs;
 
     [[nodiscard]] SDL_FRect saveSlotRect(std::size_t slot) {
         return {
@@ -292,6 +321,92 @@ namespace {
 
 
 
+    void drawSevenSegment710(SDL_Renderer* renderer, float x, float y, bool rotated, bool flicker = false, bool flashAll = false, std::uint64_t flickerFrame = 0) {
+        constexpr float width = 56.0f;
+        constexpr float height = 92.0f;
+        constexpr float spacing = 18.0f;
+        constexpr float totalWidth = width * 3.0f + spacing * 2.0f;
+
+        // Seven segments: top, upper-left, upper-right, middle, lower-left, lower-right, bottom.
+        constexpr SDL_FRect segments[7]{
+            {8, 0, 40, 8},
+            {0, 8, 8, 38},
+            {48, 8, 8, 38},
+            {8, 42, 40, 8},
+            {0, 50, 8, 34},
+            {48, 50, 8, 34},
+            {8, 84, 40, 8}
+        };
+
+        constexpr bool digits[3][7]{
+            // 7
+            {true, false, true, false, false, true, false},
+
+            // 1
+            {false, false, true, false, false, true, false},
+
+            // 0
+            {true, true, true, false, true, true, true}
+        };
+
+        for (std::size_t digit = 0; digit < 3; ++digit) {
+            for (std::size_t segment = 0; segment < 7; ++segment) {
+                bool illuminated = digits[digit][segment];
+
+                if (flashAll) {
+                    // Momentarily illuminate every segment.
+                    illuminated = true;
+                }
+                else if (flicker) {
+                    // Pseudo-random segment flicker.
+                    std::uint32_t noise =
+                        static_cast<std::uint32_t>(
+                            (flickerFrame + 1) * 0x9E3779B1u +
+                            (digit + 1) * 0x85EBCA6Bu +
+                            (segment + 1) * 0xC2B2AE35u
+                            );
+
+                    noise ^= noise >> 16;
+                    noise *= 0x7FEB352Du;
+                    noise ^= noise >> 15;
+
+                    // Switch a segment on / off.
+                    if (noise % 7u < 2u) {
+                        illuminated = !illuminated;
+                    }
+                }
+
+                if (!illuminated) {
+                    continue;
+                }
+
+                const SDL_FRect& source = segments[segment];
+
+                float localX = static_cast<float>(digit) * (width + spacing) + source.x;
+
+                float localY = source.y;
+
+                if (rotated) {
+                    // Rotate the complete 710 display by 180 degrees. Reverses both the digits and their segments.
+                    localX = totalWidth - localX - source.w;
+                    localY = height - localY - source.h;
+                }
+
+                const SDL_FRect rect{
+                    x + localX,
+                    y + localY,
+                    source.w,
+                    source.h
+                };
+
+                checkSDL(SDL_RenderFillRect(renderer, &rect));
+            }
+        }
+    }
+
+
+
+
     [[nodiscard]] std::string gateName(GateType type) {
         switch (type) {
         case GateType::And:
@@ -325,6 +440,51 @@ namespace {
     void drawText(SDL_Renderer* renderer, float x, float y, const std::string& text) {
         checkSDL(SDL_RenderDebugText(renderer, x, y, text.c_str()));
     }
+
+
+    void drawRecoveredRecordLines(
+        SDL_Renderer* renderer,
+        const narrative::RecoveredRecord& record,
+        float x,
+        float firstY,
+        float lineSpacing,
+        std::uint64_t startedAt
+    ) {
+        const std::array<std::string_view, 3> lines{
+            record.line1,
+            record.line2,
+            record.line3
+        };
+
+        const std::uint64_t elapsed = SDL_GetTicks() - startedAt;
+
+        float cursorX = x;
+        float cursorY = firstY;
+
+        for (std::size_t i = 0; i < lines.size(); ++i) {
+            if (elapsed < i * kRecordLineIntervalMs) {
+                break;
+            }
+
+            const float y = firstY + static_cast<float>(i) * lineSpacing;
+
+            const std::string text = "> " + std::string{ lines[i] };
+
+            drawText(renderer, x, y, text);
+
+            // Update the cursor position to the end of this line.
+            cursorX = x + static_cast<float>(text.size()) * 8.0f;
+            cursorY = y;
+        }
+
+        // Blink the terminal cursor at the end of most recent line.
+        const bool cursorVisible = (elapsed / 450) % 2 == 0;
+
+        if (cursorVisible) {
+            drawText(renderer, cursorX, cursorY, "_");
+        }
+    }
+
 
     [[nodiscard]] std::vector<std::string> wrapText(const std::string& text, std::size_t maxChars) {
 
@@ -478,11 +638,23 @@ bool Game::loadProgress() {
     }
 
     std::unordered_set<std::string> merits;
+    bool endingCompleted = false;
 
     std::string record;
     std::string id;
 
     while (file >> record) {
+        if (record == "ENDING") {
+            int value{};
+
+            if (!(file >> value) || value != 1 || completed != levelManager_.levelCount()) {
+                return false;
+            }
+
+            endingCompleted = true;
+            continue;
+        }
+
         if (record != "MERIT" || !(file >> id)) {
             return false;
         }
@@ -511,6 +683,7 @@ bool Game::loadProgress() {
     // Apply progress only after validating entire file.
     completedLevelCount_ = completed;
     engineeringMerits_ = std::move(merits);
+    endingCompleted_ = endingCompleted;
 
     return true;
 }
@@ -530,6 +703,10 @@ bool Game::saveProgress() const {
 
     for (const auto& id : engineeringMerits_) {
         file << "MERIT " << id << '\n';
+    }
+
+    if (endingCompleted_) {
+        file << "ENDING 1\n";
     }
 
     file.flush();
@@ -555,6 +732,9 @@ void Game::selectSaveSlot(std::size_t slot) {
 
     completedLevelCount_ = 0;
     engineeringMerits_.clear();
+    endingCompleted_ = false;
+    endingAwaitingDisconnect_ = true;
+
 
     if (exists) {
         if (!loadProgress()) {
@@ -590,8 +770,20 @@ void Game::selectSaveSlot(std::size_t slot) {
 
     screen_ = Screen::MainMenu;
 
+    audio_.play(SoundCue::Select);
+
     logEvent("SAVE " + std::to_string(slot + 1) + " LOADED");
+
+    // Resume an ending interrupted before DISCONNECT.
+    if (completedLevelCount_ == levelManager_.levelCount() &&
+        !endingCompleted_) {
+
+        endingAwaitingDisconnect_ = true;
+        screen_ = Screen::Ending;
+    }
 }
+
+
 
 
 
@@ -684,13 +876,22 @@ void Game::setStatus(std::string message) {
     logEvent(statusMessage_);
 }
 
-void Game::run() { 
+std::size_t Game::unlockedRecordCount() const noexcept {
+    const std::size_t count = completedLevelCount_ + (endingCompleted_ ? 1 : 0);
+
+    return std::min(count, narrative::kRecoveredRecords.size());
+}
+
+void Game::run() {
     while (running_) {
         handleEvents();
 
         if (!running_) {
             break;
         }
+
+        // Maintain continuous ambience.
+        audio_.update();
 
         render();
 
@@ -705,8 +906,17 @@ void Game::handleEvents() {
         if (event.type == SDL_EVENT_QUIT) {
             running_ = false;
         }
-        else if (
-            event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && (event.button.button == SDL_BUTTON_LEFT || event.button.button == SDL_BUTTON_RIGHT)) {
+        else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && (event.button.button == SDL_BUTTON_LEFT || event.button.button == SDL_BUTTON_RIGHT)) {
+
+            if (screen_ == Screen::Ending) {
+                if (!endingAwaitingDisconnect_ && SDL_GetTicks() - endingRevealStartedAt_ >= kEndingCompleteDurationMs + kRecordRevealDurationMs) {
+
+                    screen_ = Screen::MainMenu;
+                    menuMessage_ = "ALL WORK ORDERS VERIFIED";
+                }
+
+                continue;
+            }
 
             checkSDL(SDL_ConvertEventToRenderCoordinates(renderer_.get(), &event));
 
@@ -733,10 +943,126 @@ void Game::handleEvents() {
                 continue;
             }
 
+            if (screen_ == Screen::RecoveredRecords) {
+                if (!removeGate) {
+                    handleRecoveredRecordsClick(event.button.x, event.button.y);
+                }
+                continue;
+            }
+
             handleMouseClick(event.button.x, event.button.y, removeGate);
         }
+
         else if (event.type == SDL_EVENT_KEY_DOWN) {
+            
+            if (screen_ == Screen::Ending) {
+                if (event.key.repeat) {
+                    continue;
+                }
+
+                if (endingAwaitingDisconnect_) {
+                    if (event.key.scancode == SDL_SCANCODE_D) {
+                        endingAwaitingDisconnect_ = false;
+                        endingCompleted_ = true;
+
+                        endingRevealStartedAt_ = SDL_GetTicks();
+
+                        if (!saveProgress()) {
+                            logEvent("ERROR: ENDING COULD NOT BE SAVED");
+                        }
+
+                        logEvent("MAINLAND UPLINK: SEVERED - CONTAINMENT ACTIVE");
+                    }
+                }
+                else if (SDL_GetTicks() - endingRevealStartedAt_ >= kEndingCompleteDurationMs + kRecordRevealDurationMs) {
+                    screen_ = Screen::MainMenu;
+                    menuMessage_ = "ALL WORK ORDERS VERIFIED";
+                }
+
+                continue;
+            }
+            
+            
+            // Toggle CRT visual effects on every screen.
+            if (event.key.scancode == SDL_SCANCODE_F8 && !event.key.repeat) {
+
+                crtEnabled_ = !crtEnabled_;
+
+                const std::string message = crtEnabled_ ? "CRT EFFECTS ENABLED" : "CRT EFFECTS DISABLED";
+
+                if (screen_ == Screen::Puzzle) {
+                    setStatus(message);
+                }
+                else if (screen_ == Screen::MainMenu) {
+                    menuMessage_ = message;
+                }
+                else if (screen_ == Screen::SaveSelect) {
+                    saveScreenMessage_ = message;
+                }
+
+                continue;
+            }
+
+            
+            
+            if (!event.key.repeat) {
+                const SDL_Scancode key = event.key.scancode;
+
+                const auto percent = [](float volume) {
+                    return std::to_string(static_cast<int>(volume * 100.0f + 0.5f)) + "%";
+                };
+
+                bool audioChanged = true;
+                std::string message;
+
+                switch (key) {
+                case SDL_SCANCODE_M:
+                    audio_.setEnabled(!audio_.enabled());
+                    message = audio_.enabled() ? "AUDIO ENABLED" : "AUDIO MUTED";
+                    break;
+
+                case SDL_SCANCODE_F2:
+                    audio_.setAmbienceVolume(audio_.ambienceVolume() - 0.1f);
+                    message = "AMBIENCE: " + percent(audio_.ambienceVolume());
+                    break;
+
+                case SDL_SCANCODE_F3:
+                    audio_.setAmbienceVolume(audio_.ambienceVolume() + 0.1f);
+                    message = "AMBIENCE: " + percent(audio_.ambienceVolume());
+                    break;
+
+                case SDL_SCANCODE_F4:
+                    audio_.setEffectsVolume(audio_.effectsVolume() - 0.1f);
+                    message = "EFFECTS: " + percent(audio_.effectsVolume());
+                    break;
+
+                case SDL_SCANCODE_F5:
+                    audio_.setEffectsVolume(audio_.effectsVolume() + 0.1f);
+                    message = "EFFECTS: " + percent(audio_.effectsVolume());
+                    break;
+
+                default:
+                    audioChanged = false;
+                    break;
+                }
+
+                if (audioChanged) {
+                    if (screen_ == Screen::Puzzle) {
+                        setStatus(message);
+                    }
+                    else if (screen_ == Screen::MainMenu) {
+                        menuMessage_ = message;
+                    }
+                    else if (screen_ == Screen::SaveSelect) {
+                        saveScreenMessage_ = message;
+                    }
+
+                    continue;
+                }
+            }
+
             if (event.key.scancode == SDL_SCANCODE_ESCAPE && !event.key.repeat) {
+
 
                 if (screen_ == Screen::DeleteConfirmation) {
                     pendingDeleteSlot_.reset();
@@ -745,6 +1071,9 @@ void Game::handleEvents() {
                 else if (screen_ == Screen::MainMenu) {
                     activeSaveSlot_.reset();
                     screen_ = Screen::SaveSelect;
+                }
+                else if (screen_ == Screen::RecoveredRecords) {
+                    screen_ = Screen::MainMenu;
                 }
                 else if (screen_ == Screen::Puzzle) {
                     if (showBriefing_) {
@@ -899,6 +1228,8 @@ void Game::handleMouseClick(float x, float y, bool removeGate) {
             if (placedGates_.erase(socket.id) > 0) {
                 verificationStatus_ = VerificationStatus::Untested;
 
+                audio_.play(SoundCue::Remove);
+
                 setStatus("SOCKET " + socket.id + " CLEARED");
             }
 
@@ -918,6 +1249,8 @@ void Game::handleMouseClick(float x, float y, bool removeGate) {
 
         if (containsPoint(gateButtonRect(i), x, y)) {
             selectedGate_ = type;
+
+            audio_.play(SoundCue::Select);
 
             setStatus(gateName(type) + " SELECTED - CLICK A SOCKET");
 
@@ -942,6 +1275,9 @@ void Game::handleMouseClick(float x, float y, bool removeGate) {
         const LogicGate gate{ *selectedGate_ };
 
         if (gate.inputCount() != socket.sources.size()) {
+
+			audio_.play(SoundCue::Error);
+
             setStatus("ERROR 422: INCOMPATIBLE SOCKET");
             return;
         }
@@ -949,6 +1285,8 @@ void Game::handleMouseClick(float x, float y, bool removeGate) {
         placedGates_.insert_or_assign(socket.id, *selectedGate_);
 
         verificationStatus_ = VerificationStatus::Untested;
+
+        audio_.play(SoundCue::Place);
 
         setStatus(gateName(*selectedGate_) + " PLACED IN " + socket.id);
 
@@ -1007,6 +1345,9 @@ void Game::handleMouseClick(float x, float y, bool removeGate) {
 void Game::runPuzzleTests() {
     const Level& level = levelManager_.currentLevel();
 
+    // Highlight verification result for 1.5 seconds.
+    verificationHighlightUntil_ = SDL_GetTicks() + 1500;
+
 
     // Check for empty sockets
     // ------------------------------
@@ -1015,6 +1356,8 @@ void Game::runPuzzleTests() {
             verificationStatus_ = VerificationStatus::Failed;
 
             statusMessage_ ="ERROR 404: SOCKET " + socket.id + " IS EMPTY";
+
+			audio_.play(SoundCue::Error);
 
             logEvent(statusMessage_);
 
@@ -1101,10 +1444,14 @@ void Game::runPuzzleTests() {
     // ------------------------------
 
     if (failedTests == 0) {
+        
+        const bool newlyCompleted = !debugLevelOverride_ && levelManager_.currentIndex() == completedLevelCount_;
+
+        //audio_.play(newlyCompleted ? SoundCue::Discovery : SoundCue::Verified);
+        
         verificationStatus_ = VerificationStatus::Passed;
 
-        const auto gateCount = static_cast<std::size_t>(
-            std::count_if(
+        const auto gateCount = static_cast<std::size_t>(std::count_if(
                 placedGates_.begin(),
                 placedGates_.end(),
                 [](const auto& placement) {
@@ -1114,31 +1461,36 @@ void Game::runPuzzleTests() {
         );
 
         bool progressChanged = false;
+		bool meritAwarded = false;
 
         // Debug level shortcuts must never alter saved progress.
         if (!debugLevelOverride_) {
             // Engineering Merit is awarded independently from ordinary work-order completion.
-            if (level.optimalGateCount.has_value() &&
-                gateCount <= *level.optimalGateCount) {
+            if (level.optimalGateCount.has_value() && gateCount <= *level.optimalGateCount) {
 
                 if (engineeringMerits_.insert(level.id).second) {
-                    logEvent(
-                        "ENGINEERING MERIT AWARDED - WORK ORDER " +
-                        level.id
-                    );
+                    
+                    meritAwarded = true;
+
+                    logEvent("ENGINEERING MERIT AWARDED - WORK ORDER " + level.id);
 
                     progressChanged = true;
                 }
             }
 
             // Advance highest consecutively completed level.
-            if (levelManager_.currentIndex() ==
-                completedLevelCount_) {
+            if (levelManager_.currentIndex() == completedLevelCount_) {
 
                 ++completedLevelCount_;
                 progressChanged = true;
 
                 logEvent("WORK ORDER " + level.id + " VERIFIED");
+
+                // Narrative records unlock with ordinary progression. Don't need separate save file entries.
+                if (levelManager_.currentIndex() < narrative::kRecoveredRecords.size()) {
+
+                    logEvent("RECOVERED RECORD " + level.id + " AVAILABLE IN DIRECTORY");
+                }
             }
 
             if (progressChanged && !saveProgress()) {
@@ -1152,17 +1504,43 @@ void Game::runPuzzleTests() {
         else {
             statusMessage_ = "710 VERIFIED - ALL " + std::to_string(level.expectedOutputs.size()) + " TESTS PASSED";
         }
+
+        if (meritAwarded) {
+            audio_.play(SoundCue::EngineeringMerit);
+        }
+        else if (newlyCompleted) {
+            audio_.play(SoundCue::Discovery);
+        }
+        else {
+            audio_.play(SoundCue::Verified);
+        }
+
     }
     else {
         verificationStatus_ = VerificationStatus::Failed;
+
+        audio_.play(SoundCue::Error);
 
         statusMessage_ = "ERROR 409: " + std::to_string(failedTests) + " OF " + std::to_string(level.expectedOutputs.size()) + " TESTS FAILED";
     }
 
     // Record either successful or failed verification.
     logEvent(statusMessage_);
-
     // ------------------------------
+
+    // Start the ending only after the final work order has been completed through normal gameplay.
+    if (failedTests == 0 &&
+        !debugLevelOverride_ &&
+        levelManager_.currentIndex() + 1 ==
+        levelManager_.levelCount() &&
+        completedLevelCount_ ==
+        levelManager_.levelCount() &&
+        !endingCompleted_) {
+
+        endingAwaitingDisconnect_ = true;
+        screen_ = Screen::Ending;
+    }
+
 }
     
 
@@ -1330,6 +1708,236 @@ void Game::drawDeleteConfirmation() {
 
 
 
+
+void Game::drawRecoveredRecords() {
+    SDL_Renderer* renderer = renderer_.get();
+
+    checkSDL(SDL_SetRenderDrawColor(renderer, 115, 220, 145, 255));
+
+    drawText(renderer, 120, 75, "710 // RECOVERED MAINTENANCE ARCHIVE");
+
+    drawText(renderer, 120, 115, "SECONDARY STORAGE // PARTIAL RECOVERY");
+
+    const std::size_t unlockedCount = unlockedRecordCount();
+
+    if (unlockedCount == 0) {
+        drawText(renderer, 120, 220, "NO RECOVERED RECORDS AVAILABLE");
+    }
+    else {
+        const std::size_t index = std::min(recoveredRecordIndex_, unlockedCount - 1);
+
+        const bool isFinalTransmission = endingCompleted_ &&  index == narrative::kRecoveredRecords.size() - 1;
+
+        if (isFinalTransmission) {
+            drawFinalTransmission(true);
+        }
+        else {
+            const auto& record = narrative::kRecoveredRecords[index];
+
+            drawText(renderer, 120, 170, "RECORD " + std::to_string(index + 1) + " OF " + std::to_string(unlockedCount));
+
+            drawText(renderer, 120, 220, std::string{ record.heading });
+
+            drawRecoveredRecordLines(
+                renderer,
+                record,
+                120.0f,
+                280.0f,
+                35.0f,
+                recoveredRecordStartedAt_
+            );
+        }
+    }
+
+    // Buttons are shared by every archived record.
+    if (unlockedCount > 0 && recoveredRecordIndex_ > 0) {
+        checkSDL(SDL_RenderRect(renderer, &kRecordsPreviousButton));
+
+        drawText(renderer, 220, 583, "PREVIOUS RECORD");
+    }
+
+    if (unlockedCount > 0 && recoveredRecordIndex_ + 1 < unlockedCount) {
+
+        checkSDL(SDL_RenderRect(renderer, &kRecordsNextButton));
+
+        drawText(renderer, 455, 583, "NEXT RECORD");
+    }
+
+    checkSDL(SDL_RenderRect(renderer, &kRecordsBackButton));
+
+    drawText(renderer, 850, 583, "RETURN TO MENU");
+
+    drawText(renderer, 120, 650, "END OF RECOVERED DATA // 710");
+}
+
+
+
+void Game::handleRecoveredRecordsClick(float x, float y) {
+    if (containsPoint(kRecordsBackButton, x, y)) {
+        screen_ = Screen::MainMenu;
+        return;
+    }
+
+    const std::size_t unlockedCount = unlockedRecordCount();
+
+    if (containsPoint(kRecordsPreviousButton, x, y)) {
+        if (recoveredRecordIndex_ > 0) {
+            --recoveredRecordIndex_;
+            recoveredRecordStartedAt_ = SDL_GetTicks();
+        }
+
+        return;
+    }
+
+    if (containsPoint(kRecordsNextButton, x, y)) {
+        if (recoveredRecordIndex_ + 1 < unlockedCount) {
+            ++recoveredRecordIndex_;
+            recoveredRecordStartedAt_ = SDL_GetTicks();
+
+            // Replay animation.
+            if (endingCompleted_ && recoveredRecordIndex_ == narrative::kRecoveredRecords.size() - 1) {
+
+                endingRevealStartedAt_ = SDL_GetTicks();
+            }
+        }
+
+        return;
+    }
+}
+
+
+
+void Game::drawEnding() {
+    SDL_Renderer* renderer = renderer_.get();
+
+    if (!endingAwaitingDisconnect_) {
+        drawFinalTransmission(false);
+        return;
+    }
+
+    checkSDL(SDL_SetRenderDrawColor(renderer, 115, 220, 145, 255));
+
+    drawText(renderer, 160, 100, "710 // EMERGENCY CONTAINMENT");
+
+    drawText(renderer, 160, 165, "ALL MAINTENANCE WORK ORDERS VERIFIED");
+
+    drawText(renderer, 160, 205, "INCIDENT RECONSTRUCTION COMPLETE");
+
+    drawText(renderer, 160, 250, "DRILL EXCEEDED AUTHORISED DEPTH.");
+
+    drawText(renderer, 160, 280, "UNKNOWN SIGNAL ENTERED VIA BOREHOLE TELEMETRY.");
+
+    drawText(renderer, 160, 320, "CREW SEVERED MAINLAND COMMS TO PREVENT TRANSMISSION.");
+
+    drawText(renderer, 160, 390, "BACKUP SHORE UPLINK: REACTIVATED");
+
+    drawText(renderer, 160, 420, "UNKNOWN PROCESS: REQUESTING EXTERNAL ACCESS");
+
+    drawText(renderer, 160, 470, "MANUAL ISOLATION REQUIRED");
+
+    drawText(renderer, 160, 500, "WARNING: ALL EXTERNAL COMMUNICATION WILL BE LOST");
+
+    drawText(renderer, 160, 530, "PERSONNEL REMAINING ON PLATFORM: 1");
+
+    drawText(renderer, 160, 595, "> PRESS [D] TO DISCONNECT");
+}
+
+
+void Game::drawFinalTransmission(bool archiveView) {
+
+    SDL_Renderer* renderer = renderer_.get();
+
+    checkSDL(SDL_SetRenderDrawColor(renderer, 115, 220, 145, 255));
+
+    const auto& record = narrative::kRecoveredRecords.back();
+
+    const std::uint64_t elapsed = SDL_GetTicks() - endingRevealStartedAt_;
+
+    const bool revealComplete = elapsed >= kEndingRevealDurationMs;
+
+    const bool sequenceComplete = elapsed >= kEndingCompleteDurationMs;
+
+    // How long OIL has been flashing.
+    const std::uint64_t oilFlashElapsed = revealComplete ? elapsed - kEndingRevealDurationMs : 0;
+
+    const bool oilFlashing = revealComplete && oilFlashElapsed < kEndingOilFlashDurationMs;
+
+    // Flash.
+    const bool oilVisible = revealComplete && (!oilFlashing || (oilFlashElapsed / kEndingOilFlashHalfPeriodMs) % 2 == 0);
+
+    if (!archiveView) {
+        drawText(renderer, 120, 75, "710 // FINAL TRANSMISSION");
+    }
+    else {
+        drawText(renderer, 120, 170, "RECORD " + std::to_string(narrative::kRecoveredRecords.size()) + " OF " + std::to_string(unlockedRecordCount()));
+    }
+
+    // Keep record content beneath archive headings.
+    drawText(renderer, 120, 210, std::string{ record.heading });
+
+    drawText(renderer, 120, 245, "MAINLAND UPLINK: SEVERED - CONTAINMENT ACTIVE");
+
+
+    if (revealComplete) {
+
+        // Flash OIL three times.
+        if (oilVisible) {
+            drawSevenSegment710(
+                renderer,
+                538.0f,
+                360.0f,
+                true
+            );
+        }
+
+        if (sequenceComplete) {
+            drawRecoveredRecordLines(
+                renderer,
+                record,
+                120.0f,
+                280.0f,
+                25.0f,
+                endingRevealStartedAt_ + kEndingCompleteDurationMs
+            );
+
+            //drawText(renderer, 628, 473, "OIL");
+        }
+    }
+    else if (elapsed < 1650) {
+        // Start by showing 710, briefly flash, then flicker.
+        const bool flashAll = (elapsed >= 300 && elapsed < 380) || (elapsed >= 980 && elapsed < 1060);
+
+        const bool flicker = elapsed >= 380;
+        
+
+        drawSevenSegment710(
+            renderer,
+            538.0f,
+            360.0f,
+            false,
+            flicker,
+            flashAll,
+            elapsed / 75
+        );
+    }
+
+    // The display goes dark between 1650ms and 1850ms.
+
+    if (!archiveView) {
+        // Wait until animation finishes.
+        if (elapsed >= kEndingCompleteDurationMs + kRecordRevealDurationMs) {
+            drawText(renderer, 480, 640, "PRESS ANY BUTTON TO CONTINUE_");
+        }
+        else {
+            drawText(renderer, 480, 640, "TERMINAL IDENTITY RECONSTRUCTING_");
+        }
+    }
+
+}
+
+
+
+
 void Game::drawMainMenu() {
     SDL_Renderer* renderer = renderer_.get();
 
@@ -1339,13 +1947,21 @@ void Game::drawMainMenu() {
     drawText(renderer, 135, 100, "WORK ORDER DIRECTORY");
     drawText(renderer, 135, 130, "PERSONNEL: APPRENTICE ENGINEER");
 
-    drawText(
-        renderer,
-        135,
-        156,
-        "WORK ORDERS VERIFIED: " +
-        std::to_string(completedLevelCount_)
-    );
+    const auto volumePercent = [](float volume) {
+        return std::to_string(static_cast<int>(volume * 100.0f + 0.5f));
+    };
+
+    drawText(renderer, 975, 92, "AMBIENCE: " + volumePercent(audio_.ambienceVolume()) + "% [F2/F3]");
+
+    drawText(renderer, 983, 110, "EFFECTS: " + volumePercent(audio_.effectsVolume()) + "% [F4/F5]");
+
+    drawText(renderer, 999, 128, audio_.enabled() ? "SOUND: ON [M]" : "SOUND: OFF [M]");
+
+    drawText(renderer, 1015, 146, crtEnabled_ ? "CRT: ON [F8]" : "CRT: OFF [F8]");
+
+
+
+    drawText(renderer, 135, 156, "WORK ORDERS VERIFIED: " + std::to_string(completedLevelCount_));
 
     // Show completed work orders and one newly authorised work order.
     const std::size_t visibleLevelCount = std::min(completedLevelCount_ + 1, levelManager_.levelCount());
@@ -1388,12 +2004,15 @@ void Game::drawMainMenu() {
 
     checkSDL(SDL_SetRenderDrawColor(renderer, 115, 220, 145, 255));
 
-    checkSDL(SDL_RenderRect(renderer,&kMenuPreviousButton));
+    // Only show pagination when more than one page of work orders is accessible.
+    if (visibleLevelCount > kMenuPageSize) {
+        checkSDL(SDL_RenderRect(renderer, &kMenuPreviousButton));
 
-    checkSDL(SDL_RenderRect(renderer, &kMenuNextButton));
+        checkSDL(SDL_RenderRect(renderer, &kMenuNextButton));
 
-    drawText(renderer, 475, 568, "PREVIOUS PAGE");
-    drawText(renderer, 690, 568, "NEXT PAGE");
+        drawText(renderer, 475, 568, "PREVIOUS PAGE");
+        drawText(renderer, 690, 568, "NEXT PAGE");
+    }
 
     drawText(renderer, 135, 610, menuMessage_);
 
@@ -1404,6 +2023,10 @@ void Game::drawMainMenu() {
     checkSDL(SDL_RenderRect(renderer, &kMenuExitButton));
 
     drawText(renderer, 615, 658, "EXIT");
+
+    checkSDL(SDL_RenderRect(renderer, &kRecoveredRecordsButton));
+
+    drawText(renderer, 815, 658, "RECOVERED RECORDS");
 
     if (completedLevelCount_ == levelManager_.levelCount()) {
         drawText(
@@ -1416,10 +2039,7 @@ void Game::drawMainMenu() {
 }
 
 
-void Game::openWorkOrder(
-    std::size_t index,
-    bool debugAccess
-) {
+void Game::openWorkOrder(std::size_t index, bool debugAccess) {
     // Ordinary gameplay cannot open locked levels.
     if (!debugAccess && index > completedLevelCount_) {
         menuMessage_ = "ERROR 403: PREVIOUS WORK ORDER NOT VERIFIED";
@@ -1432,6 +2052,8 @@ void Game::openWorkOrder(
 
     screen_ = Screen::Puzzle;
     debugLevelOverride_ = debugAccess;
+
+	audio_.play(SoundCue::Select);
 
     selectedGate_.reset();
     placedGates_.clear();
@@ -1472,19 +2094,20 @@ void Game::handleMenuClick(float x, float y) {
         }
     }
 
-    if (containsPoint(kMenuPreviousButton, x, y)) {
-        if (menuPage_ > 0) {
-            --menuPage_;
+    if (visibleLevelCount > kMenuPageSize) {
+        if (containsPoint(kMenuPreviousButton, x, y)) {
+            if (menuPage_ > 0) {
+                --menuPage_;
+            }
+            return;
         }
-        return;
-    }
 
-    if (containsPoint(kMenuNextButton, x, y)) {
-        if ((menuPage_ + 1) * kMenuPageSize < visibleLevelCount) {
-
-            ++menuPage_;
+        if (containsPoint(kMenuNextButton, x, y)) {
+            if ((menuPage_ + 1) * kMenuPageSize < visibleLevelCount) {
+                ++menuPage_;
+            }
+            return;
         }
-        return;
     }
 
     if (containsPoint(kSwitchSaveButton, x, y)) {
@@ -1492,6 +2115,30 @@ void Game::handleMenuClick(float x, float y) {
 
         screen_ = Screen::SaveSelect;
         saveScreenMessage_ = "SELECT A SAVE FILE";
+
+        return;
+    }
+
+    if (containsPoint(kRecoveredRecordsButton, x, y)) {
+        const std::size_t unlockedCount = unlockedRecordCount();
+
+        if (unlockedCount == 0) {
+            menuMessage_ = "NO RECOVERED RECORDS AVAILABLE";
+        }
+        else {
+            // Start at most recently recovered record.
+            recoveredRecordIndex_ = unlockedCount - 1;
+
+            recoveredRecordStartedAt_ = SDL_GetTicks();
+
+            // Restart reveal when final record opened.
+            if (endingCompleted_ && recoveredRecordIndex_ == narrative::kRecoveredRecords.size() - 1) {
+
+                endingRevealStartedAt_ = SDL_GetTicks();
+            }
+
+            screen_ = Screen::RecoveredRecords;
+        }
 
         return;
     }
@@ -1642,12 +2289,7 @@ void Game::drawPuzzlePreview() {
         )
     );
 
-    drawText(
-        renderer,
-        60,
-        465,
-        "LOGIC GATES: " + std::to_string(gateCount)
-    );
+    drawText(renderer, 60, 465, "LOGIC GATES: " + std::to_string(gateCount));
 
     if (level.optimalGateCount.has_value()) {
         drawText(
@@ -1698,6 +2340,24 @@ void Game::drawPuzzlePreview() {
         break;
     }
 
+    if (verificationStatus_ != VerificationStatus::Untested && SDL_GetTicks() < verificationHighlightUntil_) {
+
+        if (verificationStatus_ == VerificationStatus::Passed) {
+            checkSDL(SDL_SetRenderDrawColor(renderer, 135, 235, 160, 255));
+        }
+        else {
+            // Amber warning indicator.
+            checkSDL(SDL_SetRenderDrawColor(renderer, 235, 175, 80, 255));
+        }
+
+        const SDL_FRect indicator{360.0f, 158.0f, 8.0f, 8.0f};
+
+        checkSDL(SDL_RenderFillRect(renderer, &indicator));
+
+        // Restore terminal green.
+        checkSDL(SDL_SetRenderDrawColor(renderer, 115, 220, 145, 255));
+    }
+
     // External input labels.
     for (std::size_t i = 0; i < level.inputCount; ++i) {
         const std::string name(1, static_cast<char>('A' + i));
@@ -1724,31 +2384,29 @@ void Game::drawPuzzlePreview() {
     // ------------------------------
     checkSDL(SDL_SetRenderDrawColor(renderer, 75, 140, 95, 255));
 
-    for (const auto& socket : level.sockets) {
-        // Draw connections originating from external inputs.
-        for (std::size_t i = 0; i < level.inputCount; ++i) {
-            const std::string source(
-                1,
-                static_cast<char>('A' + i)
-            );
+    // Draw connections originating from external inputs.
+    for (std::size_t i = 0; i < level.inputCount; ++i) {
+        const std::string source(
+            1,
+            static_cast<char>('A' + i)
+        );
 
-            drawSignalConnections(
-                renderer,
-                level,
-                source,
-                i
-            );
-        }
+        drawSignalConnections(
+            renderer,
+            level,
+            source,
+            i
+        );
+    }
 
-        // Draw connections originating from gate outputs.
-        for (std::size_t i = 0; i < level.sockets.size(); ++i) {
-            drawSignalConnections(
-                renderer,
-                level,
-                level.sockets[i].id,
-                level.inputCount + i
-            );
-        }
+    // Draw connections originating from gate outputs.
+    for (std::size_t i = 0; i < level.sockets.size(); ++i) {
+        drawSignalConnections(
+            renderer,
+            level,
+            level.sockets[i].id,
+            level.inputCount + i
+        );
     }
 
     // Redraw external input terminals after wires so the square appears on top of the line.
@@ -1909,6 +2567,8 @@ void Game::drawPuzzlePreview() {
     }
 
     drawText(renderer, 985, 535, "RIGHT CLICK TO REMOVE");
+
+    drawText(renderer, 985, 556, "M MUTE  F2/3 AMB  F4/5 FX");
     // ------------------------------
 
     
@@ -1959,9 +2619,53 @@ void Game::render() {
     else if (screen_ == Screen::MainMenu) {
         drawMainMenu();
     }
+    else if (screen_ == Screen::RecoveredRecords) {
+        drawRecoveredRecords();
+    }
+    else if (screen_ == Screen::Ending) {
+        drawEnding();
+    }
     else {
         drawPuzzlePreview();
     }
+
+    
+   // CRT visual effects
+   // ------------------------------
+    if (crtEnabled_) {
+        // Draw a subtle blinking terminal cursor.
+        const bool cursorVisible = (SDL_GetTicks() / 600) % 2 == 0;
+
+        if (cursorVisible) {
+            checkSDL(SDL_SetRenderDrawColor(renderer, 115, 220, 145, 255));
+
+            drawText(renderer, 1210, 50, "_");
+        }
+
+        // Enable transparency for the CRT overlay.
+        checkSDL(SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND));
+
+        // Very faint horizontal scanlines.
+        checkSDL(SDL_SetRenderDrawColor(renderer, 0, 0, 0, 22));
+
+        for (int y = 0; y < 720; y += 5) {
+            checkSDL(SDL_RenderLine(renderer, 0.0f, static_cast<float>(y), 1279.0f, static_cast<float>(y)));
+        }
+
+        // Subtle darkening at the outer screen edges.
+        checkSDL(SDL_SetRenderDrawColor(renderer, 0, 0, 0, 35));
+
+        const SDL_FRect leftEdge{0.0f, 0.0f, 14.0f, 720.0f};
+
+        const SDL_FRect rightEdge{1266.0f, 0.0f, 14.0f, 720.0f};
+
+        checkSDL(SDL_RenderFillRect(renderer, &leftEdge));
+        checkSDL(SDL_RenderFillRect(renderer, &rightEdge));
+
+        // Restore ordinary drawing behaviour.
+        checkSDL(SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE));
+    }
+    // ------------------------------
 
     // Present finished frame.
     checkSDL(SDL_RenderPresent(renderer));

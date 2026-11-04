@@ -47,6 +47,12 @@
     <ClInclude Include="LevelManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="RecoveredRecords.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="TerminalAudio.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="assets\levels\level01.lvl" />
@@ -61,5 +67,31 @@
     <None Include="assets\levels\level09.lvl" />
     <None Include=".gitignore" />
     <None Include="assets\levels\level10.lvl" />
+  </ItemGroup>
+  <ItemGroup>
+    <Media Include="assets\audio\creak_01.wav">
+      <Filter>Resource Files</Filter>
+    </Media>
+    <Media Include="assets\audio\creak_02.wav">
+      <Filter>Resource Files</Filter>
+    </Media>
+    <Media Include="assets\audio\creak_03.wav">
+      <Filter>Resource Files</Filter>
+    </Media>
+    <Media Include="assets\audio\creak_04.wav">
+      <Filter>Resource Files</Filter>
+    </Media>
+    <Media Include="assets\audio\creak_05.wav">
+      <Filter>Resource Files</Filter>
+    </Media>
+    <Media Include="assets\audio\creak_06.wav">
+      <Filter>Resource Files</Filter>
+    </Media>
+    <Media Include="assets\audio\creak_07.wav">
+      <Filter>Resource Files</Filter>
+    </Media>
+    <Media Include="assets\audio\creak_08.wav">
+      <Filter>Resource Files</Filter>
+    </Media>
   </ItemGroup>
 </Project>

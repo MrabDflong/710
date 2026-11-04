@@ -168,6 +168,8 @@ xcopy /E /I /Y "$(ProjectDir)assets" "$(TargetDir)assets" &gt;nul
     <ClInclude Include="Level.h" />
     <ClInclude Include="LevelManager.h" />
     <ClInclude Include="LogicGate.h" />
+    <ClInclude Include="RecoveredRecords.h" />
+    <ClInclude Include="TerminalAudio.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".gitignore" />
@@ -182,6 +184,16 @@ xcopy /E /I /Y "$(ProjectDir)assets" "$(TargetDir)assets" &gt;nul
     <None Include="assets\levels\level09.lvl" />
     <None Include="assets\levels\level10.lvl" />
     <None Include="validate_710_level.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Media Include="assets\audio\creak_01.wav" />
+    <Media Include="assets\audio\creak_02.wav" />
+    <Media Include="assets\audio\creak_03.wav" />
+    <Media Include="assets\audio\creak_04.wav" />
+    <Media Include="assets\audio\creak_05.wav" />
+    <Media Include="assets\audio\creak_06.wav" />
+    <Media Include="assets\audio\creak_07.wav" />
+    <Media Include="assets\audio\creak_08.wav" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
