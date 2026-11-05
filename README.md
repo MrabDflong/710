@@ -11,7 +11,7 @@
 
 The game contains **10 work orders**, increasingly complex circuits, optional **Engineering Merits** for efficient solutions, **three independent save slots**, industrial ambient audio and an archive of recovered maintenance records. Completing work orders gradually reveals the mystery behind the rig's shutdown.
 
-![710 circuit puzzle interface](Final_Screenshot_lvl4.png)
+![710 circuit puzzle interface](Final_Screenshot_lvl4.PNG)
 
 ## How to play
 
