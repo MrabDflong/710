@@ -3,7 +3,7 @@
 **COMP3016 — Immersive Game Technologies | Coursework 1**  
 **C++20 · SDL3 · 2D Boolean-logic puzzle game**
 
-[**Full coursework report**](report.md) · [**GitHub repository**](https://github.com/MrabDflong/710) · [**Demonstration video — ADD UNLISTED YOUTUBE URL**](https://youtu.be/SONVK6t9HS8)
+[**Full coursework report**](report.md) · [**GitHub repository**](https://github.com/MrabDflong/710) · [**Demonstration video**](https://youtu.be/SONVK6t9HS8)
 
 ## About the game
 
