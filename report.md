@@ -89,7 +89,7 @@ Original:
 
 
 Final:
-![Final Terminal Design](Final_Screenshot_lvl4.png)
+![Final Terminal Design](Final_Screenshot_lvl4.PNG)
 
 <br>
 
@@ -806,11 +806,11 @@ Several problems arose during implementation.
 
 12 Gate Function:
 
-![First Function](CodeScreenshots/12Gates.png)
+![First Function](CodeScreenshots/12Gates.PNG)
 
 XOR Test Function:
 
-![Second Function](CodeScreenshots/xorTest.png)
+![Second Function](CodeScreenshots/xorTest.PNG)
 
 **Git evidence:**
 - [Initial Boolean gate implementation and tests](https://github.com/MrabDflong/710/commit/cafd518)
