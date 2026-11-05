@@ -889,6 +889,8 @@ The repository and demonstration provide supporting evidence for the implementat
 
 **Original idea proposal:** [Original Proposal](710Proposal-COMP3016-RomanGrixti-10931611.pdf)
 
+**README:** [README.md](https://github.com/MrabDflong/710/blob/main/README.md)
+
 **AI Declaration From Brief:** 
 
 ![AI Declaration](AI-dec.PNG)
