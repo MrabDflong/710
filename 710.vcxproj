@@ -183,6 +183,8 @@ xcopy /E /I /Y "$(ProjectDir)assets" "$(TargetDir)assets" &gt;nul
     <None Include="assets\levels\level08.lvl" />
     <None Include="assets\levels\level09.lvl" />
     <None Include="assets\levels\level10.lvl" />
+    <None Include="README.md" />
+    <None Include="report.md" />
     <None Include="validate_710_level.py" />
   </ItemGroup>
   <ItemGroup>

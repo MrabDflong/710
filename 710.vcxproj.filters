@@ -67,6 +67,8 @@
     <None Include="assets\levels\level09.lvl" />
     <None Include=".gitignore" />
     <None Include="assets\levels\level10.lvl" />
+    <None Include="README.md" />
+    <None Include="report.md" />
   </ItemGroup>
   <ItemGroup>
     <Media Include="assets\audio\creak_01.wav">

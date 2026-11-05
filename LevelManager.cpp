@@ -1,4 +1,3 @@
-
 #include "LevelManager.h"
 
 #include <algorithm>
@@ -315,8 +314,7 @@ Level LevelManager::loadFromFile(const std::filesystem::path& path) {
         }
     }
 
-    const std::size_t expectedRows =
-        std::size_t{ 1 } << level.inputCount;
+    const std::size_t expectedRows = std::size_t{ 1 } << level.inputCount;
 
     if (level.expectedOutputs.size() != expectedRows) {
         throw std::runtime_error(

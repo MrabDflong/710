@@ -1364,8 +1364,6 @@ void Game::runPuzzleTests() {
             return;
         }
     }
-    // ------------------------------
-
 
     // Construct the circuit
     // ------------------------------
@@ -1409,10 +1407,9 @@ void Game::runPuzzleTests() {
     }
 
     // Connect specified final gate to output Y.
-    circuit.setOutput(Circuit::SignalSource::gate(
-        gateIds.at(level.outputSocket))
-    );
+    circuit.setOutput(Circuit::SignalSource::gate(gateIds.at(level.outputSocket)));
     // ------------------------------
+
 
 
     // Verify against truth table

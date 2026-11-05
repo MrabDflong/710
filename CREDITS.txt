@@ -1,0 +1,22 @@
+710 — Structural creak sound-effect credits
+
+Eight edited game clips: creak_01.wav to creak_08.wav
+
+Clips 01-04: Slowed hinge groans mixed with metal contraction.
+Clips 05-06: Slowed hinge groans only.
+Clips 07-08: Slowed metal contraction only.
+Source 1: "iron_hinge_creak.wav", by smidoid (Freesound)
+https://freesound.org/people/smidoid/sounds/147670/
+Licence: Creative Commons Attribution 4.0 International (CC BY 4.0)
+https://creativecommons.org/licenses/by/4.0/
+
+Source 2: "metal contraction rattle click.wav", by martian (Freesound)
+https://freesound.org/people/martian/sounds/613135/
+Licence: Creative Commons Zero 1.0 (CC0)
+https://creativecommons.org/publicdomain/zero/1.0/
+
+These files are adapted mixtures of the sources. The hinge recording was slowed
+and lowered, and metal-contraction noises were layered and processed. The
+resulting mixtures were split into separate clips, level-adjusted, faded,
+and resampled as mono 24 kHz IEEE float WAVs.
+
