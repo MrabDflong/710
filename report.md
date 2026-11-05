@@ -883,13 +883,13 @@ Further improvements could include additional work orders, more detailed circuit
 
 The repository and demonstration provide supporting evidence for the implementation.
 
-**GitHub repository:** [https://github.com/MrabDflong/710](https://github.com/MrabDflong/710)
+**GitHub repository:** [`https://github.com/MrabDflong/710`](https://github.com/MrabDflong/710)
 
-**Demonstration video:** [https://youtu.be/SONVK6t9HS8](https://youtu.be/SONVK6t9HS8)
+**Demonstration video:** [`https://youtu.be/SONVK6t9HS8`](https://youtu.be/SONVK6t9HS8)
 
-**Original idea proposal:** [Original Proposal](710Proposal-COMP3016-RomanGrixti-10931611.pdf)
+**Original idea proposal:** [`Original Proposal`](710Proposal-COMP3016-RomanGrixti-10931611.pdf)
 
-**README:** [README.md](https://github.com/MrabDflong/710/blob/main/README.md)
+**README:** [`README.md`](https://github.com/MrabDflong/710/blob/main/README.md)
 
 **AI Declaration From Brief:** 
 
